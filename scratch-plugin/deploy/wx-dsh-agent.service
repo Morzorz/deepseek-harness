@@ -14,8 +14,10 @@ Group=appuser
 WorkingDirectory=/opt/wx-dsh-agent
 EnvironmentFile=/opt/wx-dsh-agent/.env
 Environment=DSH_HOME=/opt/wx-dsh-agent
-# SIGTERM -> exit 0（dsh profile-boot 实现），systemd 视为正常停止
-ExecStart=/usr/local/bin/pnpm --dir /opt/deepseek-harness dsh --profile wx-dsh
+# 直接跑 node 入口而非 `pnpm dsh`：pnpm 包装下 SIGTERM 返回 143 会让 systemd 视作异常停止；
+# DSH 优雅关闭（SIGTERM -> exit 0）只对 node 进程成立（profile-boot 实现）。
+# WORKSPACE=/opt/deepseek-harness 需在部署前替换为该机实际仓库路径。
+ExecStart=/opt/homebrew/bin/node --import tsx/esm /opt/deepseek-harness/apps/cli/src/bin.ts --profile wx-dsh
 Restart=always
 RestartSec=3
 StandardOutput=journal

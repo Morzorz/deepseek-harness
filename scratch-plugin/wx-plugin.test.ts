@@ -6,8 +6,6 @@ import { WxRegistry, buildBody, buildQuery, replacePlaceholders, opNeedsPlacehol
 import { hmacSignature, buildHmacHeaders } from './src/wx/hmac.ts'
 import { renderResponse } from './src/wx/render.ts'
 
-const WX_HOME = process.env.WX_HOME ?? '/Users/yangjingting/develop/wokspace/GitWorkSpace/wx/bin'
-
 describe('wx adapter layer', () => {
   describe('hmac', () => {
     it('produces a 44-char base64 signature deterministically', () => {
@@ -31,7 +29,7 @@ describe('wx adapter layer', () => {
   describe('registry', () => {
     let reg: WxRegistry
     beforeAll(async () => {
-      reg = await WxRegistry.load(WX_HOME)
+      reg = await WxRegistry.load()
     })
 
     it('resolves system-name -> first biz', async () => {

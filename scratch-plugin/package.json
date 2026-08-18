@@ -1,0 +1,23 @@
+{
+  "name": "@wx-dash/plugins",
+  "version": "0.0.0",
+  "description": "企业微信审批机器人插件（wx-agent 审批工具 + wecom-bridge 企微消息桥）。部署时经 `dsh plugin --profile <name> add <本目录>` 安装，patch 用包名 subpath 引用。",
+  "private": true,
+  "type": "module",
+  "main": "src/wx-plugin.ts",
+  "exports": {
+    ".": "./src/wx-plugin.ts",
+    "./bridge": "./src/wecom-bridge/bridge-plugin.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-agent": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-session": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*"
+  }
+}

@@ -2,8 +2,13 @@
 # Loader 的 applyEntryPatches 对顶层 `- id: X` + 字段名条目执行「按 id 就地覆盖」
 # （disabled: true 关掉 dsh-base 默认挂载的工具行）；`- insert:` 条目是追加新行
 # （push 不去重），所以业务插件（新 id）必须用 - insert:，禁用行一律顶层写，避免
-# duplicate loader entry id 启动崩溃。插件路径相对 profile 目录（profile dir 是 Loader
-# 的 baseUrl），指向 build 脚本拷贝出的 plugins/ 目录。
+# duplicate loader entry id 启动崩溃。
+#
+# 业务插件以「包名 subpath」引用（@wx-dash/plugins、@wx-dash/plugins/bridge），
+# 由 build-wx-dsh-agent.sh 通过 `dsh plugin --profile <name> add <插件目录>` 安装进
+# profile 的 node_modules（pnpm link，ESM .ts 源码原样加载）；包名解析走 profile
+# 目录的 Node parent-walk 到 DSH 安装依赖。相对路径 .ts + include 在此环境不可用
+# （require(esm) 桥接报 ERR_REQUIRE_CYCLE_MODULE，连 DSH 官方 .ts 插件同样失败）。
 
 # ── 能力边界：禁用 dsh-base 默认挂载的所有无关工具（顶层条目按 id 就地覆盖） ──
 - id: tool-bash
@@ -75,17 +80,17 @@
 - id: tool-web
   disabled: true
 
-# ── 业务插件（新 id，用 - insert: 追加） ──
+# ── 业务插件（新 id，用 - insert: 追加；包名引用已安装的 @wx-dash/plugins） ──
 - insert:
     - id: wx-agent
-      name: './plugins/wx-plugin.ts'
+      name: '@wx-dash/plugins'
       config:
         defaultEnv: !!js "process.env.WX_DEFAULT_ENV ?? 'pro'"
         defaultAccount: !!js "process.env.WX_DEFAULT_ACCOUNT ?? ''"
         auditPath: !!js "process.env.WX_AUDIT_PATH ?? '/opt/wx-dsh-agent/data/audit.jsonl'"
 - insert:
     - id: wecom-bridge
-      name: './plugins/wecom-bridge/bridge-plugin.ts'
+      name: '@wx-dash/plugins/bridge'
       config:
         wsURL: !!js "process.env.WX_WS_URL ?? 'wss://openws.work.weixin.qq.com'"
         botID: !!js "process.env.WX_BOT_ID"
