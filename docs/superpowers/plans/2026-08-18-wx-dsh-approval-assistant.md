@@ -22,21 +22,22 @@
 
 **Files:**
 - Create: `scratch-plugin/src/wx/registry-assets/biz-index.json`（= `wx-cli.biz.json` 内容）
-- Create: `scratch-plugin/src/wx/registry-assets/liquidity.json`、`purchase.json`、`xincontract.json`（copy 自 `/Users/yangjingting/develop/wokspace/GitWorkSpace/wx/bin/registry/`）
+- Create: `scratch-plugin/src/wx/registry-assets/registry/liquidity.json`、`purchase.json`、`xincontract.json`（copy 自 `/Users/yangjingting/develop/wokspace/GitWorkSpace/wx/bin/registry/`，保持 `registry/` 子目录与 biz-index 的 `file` 字段一致）
 - Modify: `scratch-plugin/src/wx/registry.ts`
 
 - [ ] **Step 1: 拷贝资源文件（保留 registry/ 子目录，与 `wx-cli.biz.json` 的 `file` 字段一致）**
 
-`wx-cli.biz.json` 的索引条目是 `"file": "registry/purchase.json"`（带 `registry/` 前缀），所以内置资产必须保持同样的子目录结构，否则 `getSystem` 按 `meta.file` 解析会 ENOENT：
+`wx-cli.biz.json` 的索引条目是 `"file": "registry/purchase.json"`（带 `registry/` 前缀），所以内置资产必须保持同样的子目录结构，否则 `getSystem` 按 `meta.file` 解析会 ENOENT。注意：wx 仓库是 deepseek-harness 的**兄弟目录**（`/Users/yangjingting/develop/wokspace/...`），需用绝对路径或相对上级路径拷贝：
 
 ```bash
-mkdir -p /Users/yangjingting/develop/ai/deepseek-harness/scratch-plugin/src/wx/registry-assets/registry
-cd /Users/yangjingting/develop/ai/deepseek-harness
-cp develop/wokspace/GitWorkSpace/wx/bin/wx-cli.biz.json scratch-plugin/src/wx/registry-assets/biz-index.json
-cp develop/wokspace/GitWorkSpace/wx/bin/registry/liquidity.json scratch-plugin/src/wx/registry-assets/registry/liquidity.json
-cp develop/wokspace/GitWorkSpace/wx/bin/registry/purchase.json scratch-plugin/src/wx/registry-assets/registry/purchase.json
-cp develop/wokspace/GitWorkSpace/wx/bin/registry/xincontract.json scratch-plugin/src/wx/registry-assets/registry/xincontract.json
-find scratch-plugin/src/wx/registry-assets -type f | sort
+SCRATCH=/Users/yangjingting/develop/ai/deepseek-harness/scratch-plugin
+WX_BIN=/Users/yangjingting/develop/wokspace/GitWorkSpace/wx/bin
+mkdir -p "$SCRATCH/src/wx/registry-assets/registry"
+cp "$WX_BIN/wx-cli.biz.json" "$SCRATCH/src/wx/registry-assets/biz-index.json"
+cp "$WX_BIN/registry/liquidity.json" "$SCRATCH/src/wx/registry-assets/registry/liquidity.json"
+cp "$WX_BIN/registry/purchase.json" "$SCRATCH/src/wx/registry-assets/registry/purchase.json"
+cp "$WX_BIN/registry/xincontract.json" "$SCRATCH/src/wx/registry-assets/registry/xincontract.json"
+find "$SCRATCH/src/wx/registry-assets" -type f | sort
 ```
 
 - [ ] **Step 2: 写失败测试（registry 默认加载内置资源）**
@@ -138,7 +139,8 @@ describe('WxConfig env-key injection', () => {
     process.env.WX_TEST_HMAC_KEY = 'env-key-123'
     process.env.WX_TEST_GATEWAY = 'http://localhost:9090'
     const cfg = await WxConfig.load()
-    const env = cfg.getEnv('test')!
+    // 环境变量注入发生在 getReadyEnv（getEnv 只返回模板原值）
+    const env = await cfg.getReadyEnv('test')
     expect(env.hmac_key).toBe('env-key-123')
     expect(env.gateway).toBe('http://localhost:9090')
   })
@@ -251,7 +253,10 @@ git commit -m "feat(scratch-plugin): env-injected hmac keys, template config, no
 **Files:**
 - Delete: `scratch-plugin/src/wx/session.ts`
 - Modify: `scratch-plugin/src/wx/api.ts`
-- Modify: `scratch-plugin/src/wx/types.ts`（WxOpContext 加 account 字段，见 Task 2.1，先放在本任务完成结构准备）
+- Modify: `scratch-plugin/src/wx/wx-plugin.ts`（wxHome 可选、defaultAccount、无参 load）
+- Modify: `scratch-plugin/src/wx/types.ts`（WxOpContext 增加 account/defaultAccount 字段并移入 types.ts；wx-plugin.ts 的既有 `import type { WxOpContext } from './wx/api.ts'` 同步改为从 types 导入或保留 api.ts 的 re-export）
+- Create: `scratch-plugin/src/wx/api.test.ts`
+- Modify: `scratch-plugin/wx-plugin.test.ts`
 
 - [ ] **Step 1: 写失败测试（无会话文件时的行为）**
 
@@ -345,9 +350,14 @@ Expected: FAIL —— `WxOpContext` 尚无 `account`/`defaultAccount` 字段，`
 - `readySession` 改为调用 `ctx.config.getReadyEnv(envName)`（惰性校验密钥）并从上下文取 account：
 
 ```ts
-async function readySession(ctx: WxOpContext, env: string | undefined): Promise<ReadySession> {
+async function readySession(ctx: WxOpContext, env: string | undefined, signal?: AbortSignal): Promise<ReadySession> {
   const envName = env || ctx.defaultEnv || 'test'
   const e = await ctx.config.getReadyEnv(envName)
+  if (signal?.aborted) {
+    const err = new Error('aborted before dispatch')
+    err.name = 'AbortError'
+    throw err
+  }
   const account = ctx.account ?? ctx.defaultAccount ?? ''
   if (!account) throw new Error('缺少当前用户身份（插件未注入 account，请设置 defaultAccount 或经 wecom-bridge 注入）')
   return { env: envName, gateway: e.gateway, hmacKey: e.hmac_key, account }
@@ -356,6 +366,7 @@ async function readySession(ctx: WxOpContext, env: string | undefined): Promise<
 
 - `ReadySession` 类型去掉 `session` 字段，改存 `account`；
 - **`callOp`（原本 `ready.session.account`）改为 `const account = ready.account`**（此点不列明则编译失败）；
+- **保留并传递 `signal` 参数**：`wxQueryTodo`/`wxQueryDetail`/`wxExecuteApprove` 现有调用已传 `opts.signal`，`readySession` 的第三个参数保留 abort 早退检查（并透传给后续 `client.ts` 的 fetch abort）；
 - 删除 `session.ts` 文件；
 - `wx-plugin.ts` 改造（见 Step 4）。
 
@@ -382,7 +393,7 @@ Expected: PASS（api.test.ts、config.test.ts、registry-assets.test.ts、wx-plu
 ```bash
 cd /Users/yangjingting/develop/ai/deepseek-harness
 git rm scratch-plugin/src/wx/session.ts
-git add scratch-plugin/src/wx/api.ts scratch-plugin/src/wx/wx-plugin.ts scratch-plugin/src/wx/api.test.ts scratch-plugin/src/wx/types.ts scratch-plugin/wx-plugin.test.ts
+git add scratch-plugin/src/wx/api.ts scratch-plugin/src/wx-plugin.ts scratch-plugin/src/wx/api.test.ts scratch-plugin/src/wx/types.ts scratch-plugin/wx-plugin.test.ts
 git commit -m "feat(scratch-plugin): account from context, drop local scan session"
 ```
 
@@ -498,6 +509,8 @@ export interface PendingApprove {
   summary: string
   /** 过期时间戳；缺省由 set() 按 ttlMs 派生。 */
   expireAt?: number
+  /** 发起 approve 时的环境（confirm 按此环境执行，Task 2.3 添加，可选）。 */
+  env?: string
 }
 
 export class PendingStore {
@@ -663,14 +676,15 @@ git commit -m "feat(scratch-plugin): port prepareApprove param derivation from G
 
 **Files:**
 - Modify: `scratch-plugin/src/wx/api.ts`（新增 wxPrepareApprove / wxConfirmApprove）
-- Modify: `scratch-plugin/src/wx/pending.ts`（PendingApprove 增加 env 字段）
+- Modify: `scratch-plugin/src/wx/pending.ts`（PendingApprove 增加可选 `env?: string` 字段——approve 时记录环境，confirm 用同一环境执行）
+- Modify: `scratch-plugin/src/wx/types.ts`（WxOpContext 增加 `pending?: PendingStore` 与 `auditor?: Auditor`——pending 由 wx-plugin 注入，工具经 ctx.pending 访问）
 - Modify: `scratch-plugin/src/wx-plugin.ts`（注册 wx_confirm；wx_approve 改为两阶段；移除 ctx.approval 注入与 askApproval）
 - Create: `scratch-plugin/src/wx/steps.test.ts`
 - Modify: `scratch-plugin/wx-plugin.test.ts`
 
 - [ ] **Step 1: 写失败测试（approve 不执行写操作，confirm 才执行）**
 
-新增 `scratch-plugin/src/wx/steps.test.ts`。注意：测试先设 `WX_TEST_HMAC_KEY`/`WX_TEST_GATEWAY`（Task 1.2 惰性校验），构造完整 ctx（含 config/registry/account/pending/transport），验证 **approve 阶段零写调用、confirm 阶段恰调一次**、cancel 清理 pending、失败回写可重试:
+新增 `scratch-plugin/src/wx/steps.test.ts`。注意：`wxPrepareApprove` 定位单据会调用**列表接口**（读操作，purchase.generay 是 `/api/purchase/queryWorkflowInformation`，响应结构 `data.page.data.data`）；断言必须区分**读调用（列表）和写调用（getAdopt 审批接口）**——prepare 阶段允许读、禁止写；confirm 阶段恰好一次写。mock transport 按路径返回不同响应体：
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
@@ -681,8 +695,14 @@ import { PendingStore } from './pending.ts'
 
 describe('two-step approval flow', () => {
   const saved = new Map<string, string | undefined>()
-  let calls: string[] = []
+  let calls: string[] = []           // 记录每次 transport.do 的路径
   let ctx: any
+
+  // 列表接口的响应体：data.page.data.data 结构的记录数组
+  const listBody = JSON.stringify({
+    data: { page: { data: { data: [{ orderNumber: 'PR999', applyName: '项目X', applyNo: 'PR999' }], total: 1 } } },
+  })
+  const okBody = JSON.stringify({ data: { ok: true } })
 
   beforeEach(async () => {
     saved.set('WX_TEST_HMAC_KEY', process.env.WX_TEST_HMAC_KEY)
@@ -698,8 +718,9 @@ describe('two-step approval flow', () => {
       pending: new PendingStore(5 * 60_000),
       transport: {
         async do(o: { account: string; path: string; body: string }) {
-          calls.push(`${o.path}`)
-          return { body: JSON.stringify({ data: { ok: true } }) }
+          calls.push(o.path)
+          const isList = o.path.includes('queryWorkflowInformation')  // 采购列表接口
+          return { body: isList ? listBody : okBody }
         },
         async getMemberCode() { return 'M1001' },
       },
@@ -710,24 +731,26 @@ describe('two-step approval flow', () => {
     for (const [k, v] of saved) if (v === undefined) delete process.env[k]!; else process.env[k] = v
   })
 
-  it('approve stores pending and never calls the write transport', async () => {
+  it('approve stores pending and performs no write call (list reads are allowed)', async () => {
     await wxPrepareApprove(ctx, { biz: 'purchase.generay', orderNumber: 'PR999', action: 'approve' })
-    expect(calls.length).toBe(0)              // prepare 阶段零写调用
+    expect(calls.some((p) => p.includes('getAdopt'))).toBe(false)  // 无审批写调用
     expect(ctx.pending.get('u1')).toBeDefined()
   })
 
   it('confirm executes the write exactly once', async () => {
     await wxPrepareApprove(ctx, { biz: 'purchase.generay', orderNumber: 'PR999', action: 'approve' })
+    const writesBefore = calls.filter((p) => p.includes('getAdopt')).length
     const out = await wxConfirmApprove(ctx, { decision: 'confirm' })
-    expect(calls.length).toBe(1)
+    expect(calls.filter((p) => p.includes('getAdopt')).length).toBe(writesBefore + 1)
     expect(out).toContain('ok')
     expect(ctx.pending.get('u1')).toBeUndefined()   // 取出即删
   })
 
-  it('cancel clears pending without executing', async () => {
+  it('cancel clears pending without executing a write', async () => {
     await wxPrepareApprove(ctx, { biz: 'purchase.generay', orderNumber: 'PR999', action: 'approve' })
+    const writesBefore = calls.filter((p) => p.includes('getAdopt')).length
     const out = await wxConfirmApprove(ctx, { decision: 'cancel' })
-    expect(calls.length).toBe(0)
+    expect(calls.filter((p) => p.includes('getAdopt')).length).toBe(writesBefore)  // 无新增写调用
     expect(out).toContain('取消')
     expect(ctx.pending.get('u1')).toBeUndefined()
   })
@@ -739,7 +762,10 @@ describe('two-step approval flow', () => {
 
   it('rebids pending when execution fails so the user can retry', async () => {
     const realDo = ctx.transport.do
-    ctx.transport.do = async () => { throw new Error('网关 500') }
+    ctx.transport.do = async (o: { path: string }) => {
+      if (!o.path.includes('queryWorkflowInformation')) throw new Error('网关 500')
+      return { body: listBody }
+    }
     await wxPrepareApprove(ctx, { biz: 'purchase.generay', orderNumber: 'PR999', action: 'approve' })
     await expect(wxConfirmApprove(ctx, { decision: 'confirm' })).rejects.toThrow(/500/)
     expect(ctx.pending.get('u1')).toBeDefined()   // 失败回写可重试
@@ -793,7 +819,7 @@ export async function wxConfirmApprove(
 }
 ```
 
-`callList`/`callDetail`/`executeApprove` 复用 `callOp` 的请求构造逻辑（按 `ref.biz.list` / `ref.biz.detail` / `ref.biz.ops.approve|reject` 的 method/path/requestBody/requestQuery 发请求、渲染返回）；`executeApprove` 用 `p.env` 调 `ctx.config.getReadyEnv(p.env)` 解析网关与密钥（不依赖 confirm 传入的默认环境）。
+`callList`/`callDetail`/`executeApprove` 复用 `callOp` 的请求构造逻辑（按 `ref.biz.list` / `ref.biz.detail` / `ref.biz.ops.approve|reject` 的 method/path/requestBody/requestQuery 发请求、渲染返回）；`executeApprove` 用 `p.env` 调 `ctx.config.getReadyEnv(p.env)` 解析网关与密钥（不依赖 confirm 传入的默认环境）。**注意**：`findRecord`/`approveParams` 的 `fetcher`/`fetchDetail` 签名要求**原始响应体** `{ body: string }`（供 `extractRecords` 解析），不能直接传返回渲染文本的 `callOp`——`callList`/`callDetail` 是独立的「只发请求并返回原始 body」helper，与 `callOp` 的渲染路径区分。**UX 对齐 Go**：`wxConfirmApprove` 成功时返回 `已执行审批通过/驳回：\n<结果>`（前缀对齐 Go orchestrator.go 的 `已执行<verb>：\n` 拼接），Steps 测试的 `expect(out).toContain('ok')` 对前缀不敏感（toContain），无需改断言。
 
 `wx-plugin.ts`：注册 `wx_confirm`（参数 decision: confirm/cancel）；wx_approve 改为调 `wxPrepareApprove`（不执行写操作）；backend 上下文带 `pending` 实例（每插件实例一个 PendingStore）。
 
@@ -977,7 +1003,7 @@ git commit -m "feat(scratch-plugin): wecom ws protocol frames (subscribe/callbac
 
 - [ ] **Step 1: 写失败测试（订阅 + 断线 3s 重连 + errcode 拒绝 + 失败回复）**
 
-测试用假 WebSocket 工厂注入（`wsFactory` 返回可脚本化对象），覆盖：订阅 ack 校验、消息回调和回复帧、断线后 3 秒重连、订阅 errcode≠0 时拒绝、handler 抛错时回复错误文本。注意 `onMessage` 是 ConnectionManager 的可注入回调（默认接 Router）：
+测试用假 WebSocket 工厂注入（`wsFactory` 返回可脚本化对象），覆盖：订阅 ack 校验、消息回调和回复帧、断线后 3 秒重连、订阅 errcode≠0 时拒绝、handler 抛错时回复错误文本。注意 `onMessage` 是 ConnectionManager 的可注入回调（默认接 Router）。测试为 async 并 `await` 微任务 flush（防回复帧的异步发送与断言竞态）：
 
 ```ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -996,6 +1022,11 @@ class FakeWS {
   }
 }
 
+async function flush(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 describe('ConnectionManager', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
@@ -1010,7 +1041,7 @@ describe('ConnectionManager', () => {
     return { conn, sockets }
   }
 
-  it('subscribes, dispatches callbacks and replies', () => {
+  it('subscribes, dispatches callbacks and replies', async () => {
     const { conn, sockets } = setup()
     conn.start()                       // 第一个 socket 已创建
     const ws = sockets[0]!
@@ -1019,7 +1050,9 @@ describe('ConnectionManager', () => {
     ws.emit('message', JSON.stringify({ errcode: 0, errmsg: 'ok', headers: { req_id: '' } }))
     // 消息回调
     ws.emit('message', JSON.stringify({ cmd: 'aibot_msg_callback', headers: { req_id: 'r' }, body: { from: { userid: 'u1' }, msgtype: 'text', text: { content: 'hi' } } }))
+    await flush()  // 等异步 onMessage 完成发送
     expect(ws.sent.some((s) => s.includes('aibot_respond_msg'))).toBe(true)
+    conn.stop()
   })
 
   it('rejects a subscription with errcode != 0 and reconnects after 3s', () => {
@@ -1041,6 +1074,7 @@ describe('ConnectionManager', () => {
     const ws = sockets[0]!
     ws.emit('message', JSON.stringify({ errcode: 0, errmsg: 'ok', headers: { req_id: '' } }))
     ws.emit('message', JSON.stringify({ cmd: 'aibot_msg_callback', headers: { req_id: 'r' }, body: { from: { userid: 'u1' }, msgtype: 'text', text: { content: 'hi' } } }))
+    await flush()
     // 实现应回复具体错误文本（spec §7：消息处理失败回复具体原因，不模糊回复）
     expect(ws.sent.some((s) => s.includes('网关超时'))).toBe(true)
     conn.stop()
@@ -1062,17 +1096,20 @@ Expected: FAIL —— `ConnectionManager` 不存在。
 - 新连接建立后**第一个消息帧必须是订阅 ack**（state 机）：状态 `SUBSCRIBING → SUBSCRIBED`，在 SUBSCRIBING 状态收到 errcode≠0 的 ack → close 并重连（3s）；
 - 断线（`onclose` / 心跳超时）→ 3 秒后重连（移植 Go 版 `Run()` 循环）；
 - 读循环异步：`onmessage` 仅 `void this.handleMessage(msg)`，不阻塞后续帧（详见 Task 3.3 的 Router 串行化）；
+- `handleMessage` 内部 `try { reply = await onMessage(msg) } catch (e) { reply = '处理失败：' + (e.message) + '（请稍后重试）' }` 再发送——ConnectionManager 统一捕获 `onMessage` 拒绝并回复具体错误（spec §7，不做模糊回复）；
 - `isStopped()` / `stop()` 供测试与优雅退出（SIGTERM 时调用）。
 
 ```ts
+export type WsFactory = (url: string) => Pick<WebSocket, 'send' | 'close' | 'addEventListener' | 'removeEventListener'>
+
 export interface ConnectionOptions {
   wsURL: string
   botID: string
   secret: string
-  wsFactory?: typeof WebSocket        // 可注入，测试用
+  wsFactory?: WsFactory              // 可注入，测试用；缺省用全局 WebSocket
   onMessage: (m: { userID: string; text: string }) => Promise<string>
-  reconnectDelayMs?: number           // 默认 3000
-  heartbeatMs?: number                // 默认 30000
+  reconnectDelayMs?: number          // 默认 3000
+  heartbeatMs?: number               // 默认 30000
 }
 
 export class ConnectionManager {
@@ -1186,16 +1223,18 @@ git commit -m "feat(scratch-plugin): per-user serialized message router"
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { apply as applyBridge } from './bridge-plugin.ts'
-import type { AgentSessionProvider } from './session-router.ts'
 
 describe('bridge plugin registration', () => {
   let ctx: Context
   beforeAll(() => { ctx = new Context() })
   afterAll(async () => { await ctx.dispose() })
 
-  it('registers without throwing', () => {
+  it('registers without throwing and does not dial the network in tests', () => {
+    // autoStart:false + 注入假 wsFactory，防止单测真实连接 wss://fake 触发网络拨号
     expect(() => applyBridge(ctx, {
       wsURL: 'wss://fake', botID: 'b', secret: 's',
+      autoStart: false,
+      wsFactory: (() => ({ send() {}, close() {}, addEventListener() {}, removeEventListener() {} })) as any,
       agentProvider: async (userID, text) => `reply-${userID}`,
     })).not.toThrow()
   })
@@ -1229,6 +1268,11 @@ Expected: FAIL —— `bridge-plugin.ts` 不存在。
 - [ ] **Step 3: 实现 bridge-plugin.ts**
 
 ```ts
+import type { Context } from '@deepseek-ai/cordis'
+import { Router, type AgentSessionProvider } from './session-router.ts'
+import { ConnectionManager } from './connection.ts'
+import type { WsFactory } from './connection.ts'
+
 /** 企微智能机器人长连接默认地址（对齐 Go wecom.DefaultWSURL）。 */
 export const DefaultWSURL = 'wss://openws.work.weixin.qq.com'
 
@@ -1241,7 +1285,15 @@ export interface BridgeConfig {
   secret: string
   /** 覆盖默认 agent 提供者（测试用）。 */
   agentProvider?: AgentProvider
+  /** 默认 true；测试可设 false 避免真实拨号。 */
+  autoStart?: boolean
+  /** 注入假 WebSocket 供测试（默认用 Node 原生 WebSocket）。 */
+  wsFactory?: WsFactory
 }
+
+// 函数插件必需导出（Loader 依赖 name/inject 建立注入；缺 name 会被丢弃，见 postmortem 0001）
+export const name = 'wecom-bridge'
+export const inject = ['agents']  // 声明依赖 ctx.agents（AgentRegistry），路由 SDK 前先确认该 key 可用
 
 export function apply(ctx: Context, cfg: BridgeConfig) {
   const provider: AgentSessionProvider = {
@@ -1249,30 +1301,26 @@ export function apply(ctx: Context, cfg: BridgeConfig) {
       if (cfg.agentProvider) return cfg.agentProvider(userID, text, signal)
       // 默认实现：经 ctx.agents 取/建 userID 会话（1:1），发 prompt 收集 committed assistant 文本。
       // 参考实现模式：packages/acp/（create session → followup → whenIdle → 收集回复）。
-      return defaultSessionPrompt(ctx, userID, text, signal)
+      return defaultSessionPrompt(ctx.get('agents'), userID, text, signal)
     },
   }
   const router = new Router(provider)
+  // ConnectionManager 自身捕获 onMessage 的 rejection 并回复具体错误；此处不再重复 try/catch，
+  // 让错误信息（含 message）由 ConnectionManager 统一包装为「处理失败：<message>」回企微
   const conn = new ConnectionManager({
     wsURL: cfg.wsURL ?? DefaultWSURL,
     botID: cfg.botID,
     secret: cfg.secret,
-    onMessage: async (m) => {
-      try {
-        return await router.handle({ userID: m.userID, text: m.text })
-      } catch (e) {
-        // spec §7：消息处理失败回复具体错误，不做模糊回复
-        return `处理失败：${e instanceof Error ? e.message : String(e)}（请稍后重试或检查单号是否正确）`
-      }
-    },
+    wsFactory: cfg.wsFactory,
+    onMessage: (m) => router.handle({ userID: m.userID, text: m.text }),
   })
-  conn.start()
+  if (cfg.autoStart !== false) conn.start()
   ctx.on('dispose', () => conn.stop())
 }
 ```
 
-`defaultSessionPrompt(ctx, userID, text, signal)` 的实现要点（对齐 `packages/acp/*` 模式）：
-- `ctx.agents` 按 userID 建/取 agent（1:1）：首次 `ctx.agents.create({ sessionId, agentOptions })`，之后按 `userID` 键缓存 `AgentHandle`；
+`defaultSessionPrompt(agents, userID, text, signal)` 的实现要点（对齐 `packages/acp/*` 模式）：
+- `agents` 按 userID 建/取 agent（1:1）：首次 `agents.create({ sessionId, agentOptions })`，之后按 `userID` 键缓存 `AgentHandle`；
 - 发送：`agent.followup({ role: 'user', content: text })`（或 inbox.append + steer）；
 - 等待：`agent.whenIdle()`；
 - 收集：监听 `assistant/message` 事件 / 会话事件流读取 committed assistant 文本，取本轮回复拼接返回；
@@ -1323,7 +1371,7 @@ git commit -m "feat(scratch-plugin): wecom bridge plugin wiring messages into ag
 
 - [ ] **Step 1: 写部署组合配置（引擎部分完整钉死 + 显式关闭非审批工具）**
 
-**关键事实（评审核实）**：示例用的 `@deepseek-ai/dsh-agent-spine-demo` **默认自注册模型可见的 bash、skill、jobs 工具**（`packages/examples/agent-spine-demo/src/index.ts`：`toolBash` 默认开、`toolSkill` 默认开、`toolJobs` 默认开），并且 schema 要求 `workspaceContext` 与 `dshHome`。要实现 spec §8.1 的硬边界，必须**显式关闭**：`toolBash: false`、`toolJobs: false`、`skills.enabled: false`、`workspaceContext: false`。
+**关键事实（评审核实）**：示例用的 `@deepseek-ai/dsh-agent-spine-demo` **默认自注册模型可见的 bash、skill、jobs 工具**（`packages/examples/agent-spine-demo/src/index.ts`：`toolBash` 默认开、`toolJobs` 默认开、skill 工具挂载在 `skills.tool` 由 `skills.enabled` 门控），并且 schema 要求 `workspaceContext` 与 `dshHome`。要实现 spec §8.1 的硬边界，必须**显式关闭**：`toolBash: false`、`toolJobs: false`、`skills.enabled: false`、`workspaceContext: false`（skill 工具由 `skills.enabled` 统管，**没有**顶层的 `toolSkill` key，不要写非 schema 键 <—— 注：schemastery 会合并未知键不报错，但为清晰起见只写真实存在的 key）。
 
 `scratch-plugin/deploy/cordis.yml` 完整内容（基线参照 `examples/headless-agent/cordis.yml` 的 agent-spine/LLM/persistence/guard 最小集；**不挂** bash/fs/web/subagent/workflow/goal/ralph/todo/skill/jobs）：
 
@@ -1356,7 +1404,6 @@ git commit -m "feat(scratch-plugin): wecom bridge plugin wiring messages into ag
         cwd: !!js process.cwd()
     # 能力边界：只保留审批工具。显式关闭 agent-spine 自带的通用工具。
     toolBash: false
-    toolSkill: false
     toolJobs: false
     skills:
       enabled: false
@@ -1447,24 +1494,67 @@ git commit -m "feat(scratch-plugin): deploy composition with approval-only tool 
 - Create: `scratch-plugin/deploy/wx-dsh-agent.service`
 - Create: `scratch-plugin/deploy/smoke.sh`
 
-**部署方式（钉死，评审修正：scratch-plugin 无 package.json、node_modules 为空，无法机械「打包 node_modules」）**：DSH 运行时以**仓库根已安装的 `dsh` CLI** 为启动载体。build 脚本把「插件源码 + 部署 cordis.yml + 配置模板」复制进部署目录；启动命令为 `pnpm --dir <harness 仓库> dsh --profile <部署 profile> ...` 或直接 node 加载 cordis 引导（以 `apps/cli` 的 profile-boot 为准）。具体形态二选一，build 脚本内实现并固化：
+**部署方式（钉死，评审修正：`dsh --profile <路径>` 无效——profile 名不能含 `/`，`resolveProfileDir` 对含斜杠的名字抛 `invalid profile name`；且 loadProfile 需要 package.json 的 `dsh.profile.bundles` 清单 + `cordis.patch.yml` patch 层，profile-boot 会用空 `[]` 覆盖根配置，因此部署必须走标准 profile 目录形态）**：
 
-- 形态 A（推荐，简单）：服务器与开发机共用 deepseek-harness 仓库安装（`pnpm install` 后），build 脚本生成部署目录，systemd `ExecStart` 调 `pnpm --dir /opt/deepseek-harness dsh --profile /opt/wx-dsh-agent`（dsh CLI 支持 profile 路径开头的部署配置，见 `apps/cli/README.md`）；
-- 形态 B（完全自包含）：`pnpm deploy` 过滤拷贝 DSH 依赖到部署目录（工作量较大，本期作为备选；若 A 不可行再启用）。
+服务器上安装 deepseek-harness 仓库（`pnpm install`），build 脚本生成**profile 目录**：
 
-本任务**实现形态 A**，并在 smoke.sh 验证。
+```
+$DSH_HOME/profiles/wx-dsh/          # DSH_HOME 默认为 /opt/wx-dsh-agent
+├── package.json                    # 声明 dsh.profile.bundles + 依赖
+├── cordis.patch.yml                # patch 层：插入 wecom-bridge + wx-agent 插件条目
+└── plugins/                        # 插件源码（wx/ wecom-bridge/ wx-plugin.ts）
+
+/opt/wx-dsh-agent/
+├── .env                            # 密钥（WX_BOT_ID 等，由部署者填写）
+└── data/                           # 会话与审计落盘
+```
+
+启动命令：`ds sh --profile wx-dsh`（标准 profile 名，无路径）。`cordis.patch.yml` 用 patch 语法（`- insert:` 插入插件 entry，与 scratch-plugin 现状的 cordis.yml 一致）；插件条目引用 `plugins/wx-plugin.ts`、`plugins/bridge-plugin.ts` 相对路径（Loader 按 profile 目录解析，实现时按 `docs/cordis-primer.md` 的 patch/entry 解析规则确认路径基准）。
 
 - [ ] **Step 1: 实现 build 脚本**
 
-`build-wx-dsh-agent.sh`（参照 `bin/build-wx-agent.sh` 风格）阶段：
-1. `mkdir -p "$OUT/plugins" "$OUT/data"`；把 `scratch-plugin/src/wx/`、`src/wecom-bridge/`、`src/wx-plugin.ts` 复制到 `$OUT/plugins/`（保留目录结构：`plugins/wx/…`、`plugins/wecom-bridge/…`、`plugins/wx-plugin.ts`）；
-2. 拷贝 `deploy/cordis.yml` → `$OUT/cordis.yml`，并把其中的 `/opt/wx-dsh-agent/plugins/` 占位路径替换为 `$OUT/plugins/`（用 `sed`，`$OUT` 由脚本参数指定）；
-3. 生成 `$OUT/.env.example`（环境变量清单模板）；
-4. 输出部署目录结构。
+`build-wx-dsh-agent.sh` 阶段：
+1. 参数：`$OUT`（部署目录，默认 `/opt/wx-dsh-agent`）与 `$DSH_REPO`（harness 仓库路径，默认 `$(pwd)`）；
+2. 生成 `$OUT/profiles/wx-dsh/package.json`：
 
-- [ ] **Step 2: 实现 systemd 单元**
+```json
+{
+  "name": "wx-dsh-agent",
+  "private": true,
+  "dependencies": {},
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] } }
+}
+```
 
-`wx-dsh-agent.service`：
+（bundles 取值参考 `examples/headless-agent` 实际声明的 manifest；部署只加载补丁层所引插件，不引入 web 前端 bundle——实现时按 profile 解析的实际包名调整，`dsh-base` 为起点。）
+
+3. 拷贝 `deploy/cordis.patch.yml` → `$OUT/profiles/wx-dsh/cordis.patch.yml`，把插件路径占位（`/opt/wx-dsh-agent/plugins/...`）替换为相对 `plugins/...`（`sed`）；
+4. 拷贝 `scratch-plugin/src/` 下的 `wx/`、`wecom-bridge/`、`wx-plugin.ts` → `$OUT/profiles/wx-dsh/plugins/`（保留目录结构）；
+5. `mkdir -p "$OUT/data"`；生成 `$OUT/.env.example`（环境变量模板）；
+6. 输出部署目录结构。
+
+- [ ] **Step 2: 实现 cordis.patch.yml（部署专用）**
+
+`scratch-plugin/deploy/cordis.patch.yml`（patch 层，仅插入两个插件；引擎/agent-spine/LLM/persistence/guard 由 profile 的 bundles 提供，patch 只追加业务插件；若 bundles 不提供 agent 组合，则 patch 同时插入 agent-spine 配置——实现时以 headless-agent 的 bundle 实际内容核对）：
+
+```yaml
+- insert:
+    - id: wx-agent
+      name: './plugins/wx-plugin.ts'
+      config:
+        defaultEnv: !!js "process.env.WX_DEFAULT_ENV ?? 'pro'"
+        defaultAccount: !!js "process.env.WX_DEFAULT_ACCOUNT ?? ''"
+        auditPath: !!js "process.env.WX_AUDIT_PATH ?? '/opt/wx-dsh-agent/data/audit.jsonl'"
+- insert:
+    - id: wecom-bridge
+      name: './plugins/bridge-plugin.ts'
+      config:
+        wsURL: !!js "process.env.WX_WS_URL ?? 'wss://openws.work.weixin.qq.com'"
+        botID: !!js "process.env.WX_BOT_ID"
+        secret: !!js "process.env.WX_BOT_SECRET"
+```
+
+- [ ] **Step 3: 实现 systemd 单元**
 
 ```ini
 [Unit]
@@ -1476,7 +1566,8 @@ User=appuser
 Group=appuser
 WorkingDirectory=/opt/wx-dsh-agent
 EnvironmentFile=/opt/wx-dsh-agent/.env
-ExecStart=/usr/local/bin/pnpm --dir /opt/deepseek-harness dsh --profile /opt/wx-dsh-agent/cordis.yml
+Environment=DSH_HOME=/opt/wx-dsh-agent
+ExecStart=/usr/local/bin/pnpm --dir /opt/deepseek-harness dsh --profile wx-dsh
 Restart=always
 RestartSec=3
 StandardOutput=journal
@@ -1486,22 +1577,23 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
-- [ ] **Step 3: 部署冒烟测试（可离线）**
+- [ ] **Step 4: 部署冒烟测试（可离线）**
 
-`smoke.sh`：临时目录跑 build 脚本 → 断言产物文件齐全（cordis.yml/plugins/data/.env.example）→ 断言**部署后的 cordis.yml 不含残余 `/opt/wx-dsh-agent` 占位**且**不含 `toolBash` 之外的禁止能力插件**（grep 检查 `dsh-bash-local`/`dsh-fs-local`/`dsh-tool-web` 等未出现）→ 用无法连通的假 `WX_BOT_ID`/`WX_BOT_SECRET` + 假网关密钥启动 dsh 进程 → 断言进程存活（重连循环不崩溃）→ `SIGTERM` 后断言退出码 0（DSH CLI 已实现 SIGTERM→exit 0，见 `apps/cli/src/profile-boot.ts`）→ 清理。
+`smoke.sh`：临时目录跑 build 脚本（`OUT=$(mktemp -d)` + 指定 DSH_REPO）→ 断言产物文件齐全（profiles/wx-dsh/{package.json,cordis.patch.yml,plugins/}、data/、.env.example）→ 断言部署文件不含残余 `/opt/wx-dsh-agent/plugins` 占位 → 断言禁止能力插件未出现（grep 检查 `dsh-bash`/`dsh-fs`/`dsh-tool-web`/`subagent`/`workflow` 等未出现在 patches）→ 用假的 `WX_BOT_ID`/`WX_BOT_SECRET` + 假网关密钥（`WX_PRO_HMAC_KEY`/`WX_PRO_GATEWAY`）设环境变量，`DSH_HOME=$OUT` 下启动 `dsh --profile wx-dsh` → 断言进程存活（WS 重连循环不崩溃）→ `SIGTERM` 后断言退出码 0（DSH CLI 已实现 SIGTERM→exit 0，见 `apps/cli/src/profile-boot.ts`）→ 清理。
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 cd /Users/yangjingting/develop/ai/deepseek-harness
 git add scratch-plugin/deploy/
-git commit -m "feat(scratch-plugin): self-contained deploy bundle with systemd unit and smoke test"
+git commit -m "feat(scratch-plugin): self-contained deploy profile with systemd unit and smoke test"
 ```
 
 ### Task 4.3: 端到端对话测试（查待办→审批→确认 全链路）
 
 **Files:**
 - Create: `scratch-plugin/e2e/approval-dialog.test.ts`（vitest 集成测试）
+- Modify: `scratch-plugin/tsconfig.json`（`include` 增加 `e2e/**/*.ts`，让验证清单的 `tsc -p .` 覆盖 e2e 测试）
 
 **机制说明（评审修正）**：仓库的 keyless snapshot 是 JSONL 场景套件（`examples/<name>/tests/snapshots/` + `pnpm run test:snapshot`），依赖 example leaf 结构；scratch-plugin 不在 examples 树内，不适用。本任务改用 **vitest 集成测试**断言完整对话输出文本（带 mock transport + mock WS 回调，无需真实 LLM/网关），作为端到端行为的可离线验证；JSONL 快照套件列为后续扩展（若需要发布产品级快照再迁移到 examples 树）。
 
