@@ -1,0 +1,88 @@
+# 参考组合：企微审批机器人。只挂审批工具 + 最小引擎，不挂 bash/fs/web/subagent 等通用能力。
+# 这是组合意图参考（供评审/排障），实际部署由 Task 4.2 的 profile + cordis.patch.yml 驱动，不直接消费本文件。
+- id: settings
+  name: '@deepseek-ai/dsh-settings-file'
+
+- id: credentials
+  name: '@deepseek-ai/dsh-credentials-local'
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  config:
+    thinking: enabled
+    reasoningEffort: max
+    models:
+      - id: deepseek-v4-pro
+        contextWindow: 128000
+      - id: deepseek-v4-flash
+        contextWindow: 128000
+
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents:
+      - id: main
+        provider: deepseek-official
+        model: deepseek-v4-flash
+        cwd: !!js process.cwd()
+    # 能力边界：只保留审批能力。显式关闭 agent-spine 自带的通用工具。
+    toolBash: false
+    toolJobs: false
+    skills:
+      enabled: false
+    workspaceContext: false
+    persona: |
+      你是企业微信审批助手，代表企业微信用户处理内部审批业务。
+
+      ## 能力与边界
+      - 你只处理：查询待办/已办、查看单据详情、审批通过/驳回。
+      - 可用审批系统通过 wx_query_biz 查询；业务引用格式：系统名（如 purchase）或 系统.业务（如 purchase.generay）。
+      - 你的身份是「当前对话用户」，所有查询/审批都以该用户身份执行，不要假设能看到其他用户的数据。
+
+      ## 审批规则（重要）
+      - 审批通过/驳回是敏感写操作：必须先调用 wx_approve（它返回单据摘要并登记待确认，不会直接执行），用户明确回复「确认」后调用 wx_confirm(decision=confirm) 执行；回复「取消」或含糊时调用 wx_confirm(decision=cancel) 清理待确认状态。
+      - 用户未提供完整单号时，先引导用户补充，或建议先调用 wx_query_todo 查询待办列表。
+
+      ## 回复风格
+      - 用简洁中文回复，直接呈现工具返回的列表/摘要，不要编造数据。
+      - 与审批无关的请求（写代码、闲聊、查询外部信息等）一律礼貌拒绝，并说明你只处理审批业务。
+
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: './data/sessions'
+    compression: zstd
+
+- id: checkpoint-policy
+  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+
+- id: token-meter
+  name: '@deepseek-ai/dsh-token-meter'
+
+- id: compaction-basic
+  name: '@deepseek-ai/dsh-compaction-basic'
+  config:
+    thresholdRatio: 0.8
+    retainRatio: 0.16
+    maxTokens: 8192
+    compactionRetries: 1
+
+# guard 防护（引擎侧，超时也由 dsh-base 提供；此处示意）
+- id: repeat-tool-reminder
+  name: '@deepseek-ai/dsh-repeat-tool-reminder'
+
+# 审批工具插件（scratch-plugin）
+- id: wx-agent
+  name: '../src/wx-plugin.ts'
+  config:
+    defaultEnv: !!js "process.env.WX_DEFAULT_ENV ?? 'pro'"
+    defaultAccount: !!js "process.env.WX_DEFAULT_ACCOUNT ?? ''"
+    auditPath: !!js "process.env.WX_AUDIT_PATH ?? '/opt/wx-dsh-agent/data/audit.jsonl'"
+
+# 企微机器人桥接插件（scratch-plugin）
+- id: wecom-bridge
+  name: '../src/wecom-bridge/bridge-plugin.ts'
+  config:
+    wsURL: !!js "process.env.WX_WS_URL ?? 'wss://openws.work.weixin.qq.com'"
+    botID: !!js "process.env.WX_BOT_ID"
+    secret: !!js "process.env.WX_BOT_SECRET"
