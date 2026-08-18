@@ -11,6 +11,7 @@
 import type { WxConfig } from './config.ts'
 import type { WxRegistry } from './registry.ts'
 import type { PendingStore } from './pending.ts'
+import type { Auditor } from './audit.ts'
 
 /** One environment's gateway + signing config from `wx-cli.conf.json`. */
 export interface WxEnv {
@@ -67,6 +68,8 @@ export interface WxOpContext {
   transport?: WxTransport
   /** 两步审批的待确认状态存储（wx_approve 登记、wx_confirm 取用）。 */
   pending?: PendingStore
+  /** 审计日志写入器（可选，配置了 auditPath 时注入）。 */
+  auditor?: Auditor
 }
 
 /** Response rendering spec from a registry op (`response`). */

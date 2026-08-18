@@ -26,6 +26,7 @@ import { wxQueryBiz, wxQueryTodo, wxQueryDetail, wxPrepareApprove, wxConfirmAppr
 import type { WxOpContext } from './wx/api.ts'
 import { PendingStore } from './wx/pending.ts'
 import { SameTurnGuard } from './wx/same-turn.ts'
+import { Auditor } from './wx/audit.ts'
 
 export const name = 'wx-agent'
 export const inject = ['tools']
@@ -38,6 +39,8 @@ export interface Config {
   defaultEnv?: string
   /** Dev fallback identity when the calling context injects no account. */
   defaultAccount?: string
+  /** 审批审计日志 JSONL 文件路径（可选）；配置后会把每次审批事件追加到该文件。 */
+  auditPath?: string
 }
 
 /** Runtime schema for the plugin config. */
@@ -45,6 +48,7 @@ export const Config: z<Config> = z.object({
   wxHome: z.string(),
   defaultEnv: z.string().default('test'),
   defaultAccount: z.string(),
+  auditPath: z.string(),
 })
 
 /** Environment choices exposed to the model. */
@@ -72,7 +76,11 @@ export function apply(ctx: Context, cfg: Config) {
       cfg.wxHome ? WxConfig.load(cfg.wxHome) : WxConfig.load(),
       cfg.wxHome ? WxRegistry.load(cfg.wxHome) : WxRegistry.load(),
     ])
-    return { config, registry, defaultEnv: cfg.defaultEnv, defaultAccount: cfg.defaultAccount, pending: new PendingStore(5 * 60_000) }
+    return {
+      config, registry, defaultEnv: cfg.defaultEnv, defaultAccount: cfg.defaultAccount,
+      pending: new PendingStore(5 * 60_000),
+      auditor: cfg.auditPath ? new Auditor(cfg.auditPath) : undefined,
+    }
   })()
 
   // --- wx_query_biz ---

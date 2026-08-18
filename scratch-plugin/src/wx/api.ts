@@ -248,6 +248,10 @@ export async function wxPrepareApprove(
     account: ready.account, biz: opts.biz, action: opts.action, orderNumber: opts.orderNumber,
     vars: params, summary, env: ready.env,
   })
+  void ctx.auditor?.record({
+    event: 'approve-request', account: ready.account, biz: opts.biz,
+    orderNumber: opts.orderNumber, action: opts.action, outcome: 'pending',
+  })
   return summary
 }
 
@@ -263,12 +267,27 @@ export async function wxConfirmApprove(
   if (!pending) throw new Error('缺 pending 存储（插件未注入）')
   const p = pending.take(ready.account)
   if (!p) return '没有待确认的审批（可能已过期或已处理，请重新发起）'
-  if (opts.decision !== 'confirm') return '已取消审批操作。'
+  if (opts.decision !== 'confirm') {
+    void ctx.auditor?.record({
+      event: 'approve-cancel', account: ready.account, biz: p.biz,
+      orderNumber: p.orderNumber, action: p.action, outcome: 'cancelled',
+    })
+    return '已取消审批操作。'
+  }
   try {
     const result = await executeApprove(ctx, p)
+    void ctx.auditor?.record({
+      event: p.action, account: ready.account, biz: p.biz,
+      orderNumber: p.orderNumber, action: p.action, outcome: 'success',
+    })
     return `已执行${p.action === 'reject' ? '审批驳回' : '审批通过'}：\n${result}`
   } catch (e) {
     pending.rebid(p)
+    void ctx.auditor?.record({
+      event: p.action, account: ready.account, biz: p.biz,
+      orderNumber: p.orderNumber, action: p.action, outcome: 'failed',
+      error: messageOf(e),
+    })
     throw e
   }
 }
