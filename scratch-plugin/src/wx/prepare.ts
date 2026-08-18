@@ -35,8 +35,8 @@ export async function findRecord(
 
 /**
  * 按 approve/reject op 的 requestBody 占位符推导审批参数（含 needDetail 分支，可传
- * fetchDetail 拉详情补字段）。返回的 map 同时以 requestBody 键和占位符键写入，便于
- * 调用方按业务语义（如 bussNo/auditResult）或占位符语义取用。
+ * fetchDetail 拉详情补字段）。返回的 map 以占位符键写入，供 buildBody 消费——
+ * buildBody 遍历 requestBody 键，用 vars[placeholder] 替换各 {{placeholder}} 模板。
  */
 export async function approveParams(
   ref: WxBizRef,
@@ -62,12 +62,10 @@ export async function approveParams(
       if (isNeedDetail(ph)) {
         if (!needDetail.includes(ph)) needDetail.push(ph)
         vars[ph] = ''
-        vars[bodyKey] = ''
         continue
       }
       const v = derive(ph, account, action, orderNo, opinion, fields)
       vars[ph] = v
-      vars[bodyKey] = v
     }
   }
 

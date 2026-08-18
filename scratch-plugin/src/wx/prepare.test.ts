@@ -32,8 +32,8 @@ describe('prepare approve', () => {
     const vars = await approveParams(ref, 'approve', 'u2', 'BNO123', '', {
       bussNo: 'BNO123', cnName: '申请人',
     })
-    expect(vars.bussNo).toBe('BNO123')
-    expect(vars.auditResult).toBe('1')   // approve -> 1；reject 分支应为 '2'
+    expect(vars.orderNumber).toBe('BNO123')
+    expect(vars.action).toBe('1')   // approve -> 1；reject 分支应为 '2'
   })
 
   it('builds an approval summary with order no, name and action', () => {
