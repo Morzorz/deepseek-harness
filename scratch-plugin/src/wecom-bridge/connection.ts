@@ -124,12 +124,14 @@ export class ConnectionManager {
     })
     ws.addEventListener('close', () => {
       if (!this.running || this.state === 'STOPPED') return
+      if (this.ws !== ws) return // 陈旧连接的迟到 close，忽略
       this.clearTimers()
       this.ws = null
       this.scheduleReconnect(this.reconnectDelayMs)
     })
     ws.addEventListener('error', () => {
       if (!this.running || this.state === 'STOPPED') return
+      if (this.ws !== ws) return // 陈旧连接的迟到 error，忽略
       // 触发 close 事件走正常重连路径
       try {
         ws.close()
