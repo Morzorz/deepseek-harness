@@ -57,7 +57,7 @@ function assertAgentsAvailable(agents: unknown): asserts agents is Context['agen
  * agent 静止，收集本轮提交的 assistant 文本并返回（对照 ACP bridge 的
  * create → followup → whenIdle → 收集 assistant/message 机制）。
  */
-function defaultSessionPrompt(
+export function defaultSessionPrompt(
   ctx: Context,
   agentByUser: Map<string, AgentHandle>,
   assistantBySession: Map<SessionId, string[]>,
@@ -92,7 +92,10 @@ function defaultSessionPrompt(
     } finally {
       signal?.removeEventListener('abort', abort)
     }
-    return buffer.slice(start).join('')
+    const reply = buffer.slice(start).join('')
+    // 重置到本轮起点：collector 下轮从空数组重新累积，避免跨轮无界增长。
+    buffer.length = start
+    return reply
   })()
 }
 
