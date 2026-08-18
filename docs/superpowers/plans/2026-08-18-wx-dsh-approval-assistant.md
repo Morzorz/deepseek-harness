@@ -631,8 +631,10 @@ describe('prepare approve', () => {
     const vars = await approveParams(ref, 'approve', 'u2', 'BNO123', '', {
       bussNo: 'BNO123', cnName: '申请人',
     })
-    expect(vars.bussNo).toBe('BNO123')
-    expect(vars.auditResult).toBe('1')   // approve -> 1；reject 分支应为 '2'
+    // approveParams 返回以「占位符 key」为准的 vars（buildBody 按占位符替换 requestBody 模板）：
+    // liquidity approve body {"bussNo":"{{orderNumber}}","auditResult":"{{action}}"...} 的模板占位符是 orderNumber/action
+    expect(vars.orderNumber).toBe('BNO123')
+    expect(vars.action).toBe('1')   // approve -> 1；reject 分支应为 '2'
   })
 
   it('builds an approval summary with order no, name and action', () => {
@@ -1548,20 +1550,22 @@ git commit -m "feat(scratch-plugin): deploy composition with approval-only tool 
 - Create: `scratch-plugin/deploy/wx-dsh-agent.service`
 - Create: `scratch-plugin/deploy/smoke.sh`
 
-**部署方式（钉死，评审修正：`dsh --profile <路径>` 无效——profile 名不能含 `/`，`resolveProfileDir` 对含斜杠的名字抛 `invalid profile name`；且 loadProfile 需要 package.json 的 `dsh.profile.bundles` 清单 + `cordis.patch.yml` patch 层，profile-boot 会用空 `[]` 覆盖根配置，因此部署必须走标准 profile 目录形态）**：
+**部署方式（终审修正 + 真实部署验证）：** `dsh --profile <路径>` 无效（profile 名不能含 `/`），部署必须走标准 profile 目录形态。**插件以「包名 + ESM .ts 源码」从 profile 的 node_modules 加载**（经 `dsh plugin --profile <name> add <插件目录>` 用 pnpm link 安装），patch 用**包名 subpath**引用；**不可用相对路径 `.ts` + include**（此环境走 CJS require 桥接报 `ERR_REQUIRE_CYCLE_MODULE`，连 DSH 官方自带的 `.ts` 插件同样失败，是平台限制）。这是读取 `apps/cli/reference/README.md`、`vendor/loader`源码，并做真实 build→add→launch 实验后确立的方案。
 
-服务器上安装 deepseek-harness 仓库（`pnpm install`），build 脚本生成**profile 目录**：
+build 脚本生成 **profile 目录 + 插件包安装**：
 
 ```
 $DSH_HOME/profiles/wx-dsh/          # DSH_HOME 默认为 /opt/wx-dsh-agent
-├── package.json                    # 声明 dsh.profile.bundles + 依赖
-├── cordis.patch.yml                # patch 层：插入 wecom-bridge + wx-agent 插件条目
-└── plugins/                        # 插件源码（wx/ wecom-bridge/ wx-plugin.ts）
+├── package.json                    # 声明 dsh.profile.bundles=[@deepseek-ai/dsh-base]
+├── cordis.patch.yml                # 顶层禁用无关工具 + 包名插入 wx-agent / wecom-bridge
+└── node_modules/@wx-dash/plugins   # dsh plugin add 安装的插件包（pnpm link 到 scratch-plugin，ESM .ts 源码）
 
 /opt/wx-dsh-agent/
 ├── .env                            # 密钥（WX_BOT_ID 等，由部署者填写）
 └── data/                           # 会话与审计落盘
 ```
+
+启动用 **node 直接入口**（`node --import tsx/esm <repo>/apps/cli/src/bin.ts --profile wx-dsh`）：DSH 优雅关闭（SIGTERM→exit 0）只对 node 进程成立；经 `pnpm dsh` 包装时 SIGTERM 返回 143。systemd 单元用 node 直接启动。
 
 启动命令：`ds sh --profile wx-dsh`（标准 profile 名，无路径）。`cordis.patch.yml` 用 patch 语法（`- insert:` 插入插件 entry，与 scratch-plugin 现状的 cordis.yml 一致）；插件条目引用 `plugins/wx-plugin.ts`、`plugins/bridge-plugin.ts` 相对路径（Loader 按 profile 目录解析，实现时按 `docs/cordis-primer.md` 的 patch/entry 解析规则确认路径基准）。
 
@@ -1780,9 +1784,11 @@ git commit -m "test(scratch-plugin): approval dialog end-to-end integration test
 - [ ] 全仓库 grep 无 `wxHome` 残留必需引用（调试覆盖参数以 `wxHome?` 可选形式保留可接受）；
 - [ ] `scratch-plugin/deploy/smoke.sh` 在干净临时目录通过（含部署产物完整性、**有效组合树中禁止能力插件未启用**、SIGTERM 退出码 0 断言）；
 - [ ] 无真实密钥提交（git log 检查 `wx-cli.conf.json` 未入库）；
-- [ ] 部署产物：profile 目录（package.json/cordis.patch.yml/plugins/）齐全，`cordis.patch.yml` 中插件用相对 `plugins/...` 路径（无 `/opt/wx-dsh-agent` 残留），且所有无关工具行均 `disabled: true`；
+- [ ] 部署产物：profile 目录（package.json/cordis.patch.yml/node_modules/@wx-dash/plugins）齐全，插件包已由 `dsh plugin add` link 安装，`cordis.patch.yml` 用**包名 subpath**（`@wx-dash/plugins`、`@wx-dash/plugins/bridge`，无相对 `.ts` 路径，无 `/opt/wx-dsh-agent` 残留占位），且所有无关工具行均 `disabled: true`；
 - [ ] 设计文档与计划文档均已提交 git；修订后的计划已重新评审通过。
 
 ## 实施顺序建议
 
 Chunk 1 → Chunk 2 → Chunk 3 → Chunk 4。每 Chunk 结束跑一次全量 vitest；Chunk 3 的 Task 3.4 需要先阅读 DSH agent 会话 API（`packages/core/agent/` README + `packages/acp/` 的 bridge 实现模式——create session → followup → whenIdle → 收集 committed assistant 文本），如接口与计划假设不符，按实际 API 调整实现并更新本计划。Task 4.2 依赖 `apps/cli` 的 profile-boot 与 dsh CLI 的 profile 参数用法，以及 `packages/bundle/base/cordis.patch.yml` 的完整工具行清单（禁用覆盖清单需与实际行 id 一致），实施前阅读 `apps/cli/README.md` 与 dsh-base patch 确认。
+
+> **执行期决策记录（重要）**：Task 4.2 原计划假设「把插件 `.ts` 源码拷贝进 profile、patch 用相对路径 `./plugins/xxx.ts` 被 DSH 加载」。真实部署实验证明这条路径不可用——DSH `--profile` 的 include 对**相对路径 `.ts` 插件**走 CJS `require(esm)` 桥接，报 `ERR_REQUIRE_CYCLE_MODULE`（连 DSH 官方实例 `.ts` 插件同样失败，是平台限制）。经对照实验确立正确方式：**插件声明为 `@wx-dash/plugins` 包，经 `dsh plugin --profile add <目录>`（pnpm link）装进 profile node_modules，patch 用包名 subpath 引用（ESM `.ts` 源码原样可加载）**；启动用 node 直接入口（SIGTERM→exit 0 只对 node 进程成立，经 `pnpm dsh` 包装会 143）。上述部署结论已由真实 build→add→launch 端到端验证通过（见 commit `7b4b857f5c`）。计划中 Task 4.2 的旧步骤（拷贝 `plugins/`、相对路径名）与最终实现不同，以当前实际部署产物为准。
