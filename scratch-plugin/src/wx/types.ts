@@ -10,6 +10,7 @@
 
 import type { WxConfig } from './config.ts'
 import type { WxRegistry } from './registry.ts'
+import type { PendingStore } from './pending.ts'
 
 /** One environment's gateway + signing config from `wx-cli.conf.json`. */
 export interface WxEnv {
@@ -64,6 +65,8 @@ export interface WxOpContext {
   /** Dev fallback identity when `account` is not injected. */
   defaultAccount?: string
   transport?: WxTransport
+  /** 两步审批的待确认状态存储（wx_approve 登记、wx_confirm 取用）。 */
+  pending?: PendingStore
 }
 
 /** Response rendering spec from a registry op (`response`). */

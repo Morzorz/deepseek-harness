@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import { apply as applyWxPlugin } from './src/wx-plugin.ts'
 import { WxRegistry, buildBody, buildQuery, replacePlaceholders, opNeedsPlaceholder } from './src/wx/registry.ts'
 import { hmacSignature, buildHmacHeaders } from './src/wx/hmac.ts'
@@ -125,8 +124,7 @@ describe('wx plugin registration', () => {
       assemble: async () => ({ sections: [], contexts: [], tools: [], variables: {} }),
     } as never)
     const t = await ctx.plugin(ToolRuntime)
-    const a = await ctx.plugin(ApprovalService)
-    disposers = [() => t.dispose(), () => a.dispose()]
+    disposers = [() => t.dispose()]
     applyWxPlugin(ctx, { defaultEnv: 'test', defaultAccount: 'test-account' })
   })
 
@@ -134,12 +132,13 @@ describe('wx plugin registration', () => {
     for (const d of disposers) await d()
   })
 
-  it('registers the four wx tools', () => {
+  it('registers the five wx tools', () => {
     const names = ctx.tools.schemas().map((t) => t.name)
     expect(names).toContain('wx_query_biz')
     expect(names).toContain('wx_query_todo')
     expect(names).toContain('wx_query_detail')
     expect(names).toContain('wx_approve')
+    expect(names).toContain('wx_confirm')
   })
 
   it('wx_query_biz returns the system list', async () => {
