@@ -1544,6 +1544,7 @@ git commit -m "feat(scratch-plugin): deploy composition with approval-only tool 
 
 **Files:**
 - Create: `scratch-plugin/deploy/build-wx-dsh-agent.sh`
+- Create: `scratch-plugin/deploy/cordis.patch.yml`（Step 2 创建，Step 1 拷贝）
 - Create: `scratch-plugin/deploy/wx-dsh-agent.service`
 - Create: `scratch-plugin/deploy/smoke.sh`
 
@@ -1575,11 +1576,11 @@ $DSH_HOME/profiles/wx-dsh/          # DSH_HOME 默认为 /opt/wx-dsh-agent
   "name": "wx-dsh-agent",
   "private": true,
   "dependencies": {},
-  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] } }
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base"] } }
 }
 ```
 
-（bundles 取值参考 `examples/headless-agent` 实际声明的 manifest；部署只加载补丁层所引插件，不引入 web 前端 bundle——实现时按 profile 解析的实际包名调整，`dsh-base` 为起点。）
+（**只含 `@deepseek-ai/dsh-base`**：它提供 agent/agent-loop/llm/llm-deepseek/session/persistence/tools 等消息驱动 agent 所需的全部引擎行，wecom-bridge 经 `ctx.agents` 驱动；**不要加 `@deepseek-ai/dsh-web-app`**——那会挂 HTTP server + Web runtime + 浏览器 roster，与「只做审批、无 Web UI」的架构冲突。）
 
 3. 拷贝 `deploy/cordis.patch.yml` → `$OUT/profiles/wx-dsh/cordis.patch.yml`，把插件路径占位（`/opt/wx-dsh-agent/plugins/...`）替换为相对 `plugins/...`（`sed`）；
 4. 拷贝 `scratch-plugin/src/` 下的 `wx/`、`wecom-bridge/`、`wx-plugin.ts` → `$OUT/profiles/wx-dsh/plugins/`（保留目录结构）；
@@ -1588,71 +1589,84 @@ $DSH_HOME/profiles/wx-dsh/          # DSH_HOME 默认为 /opt/wx-dsh-agent
 
 - [ ] **Step 2: 实现 cordis.patch.yml（部署专用，含能力边界禁用）**
 
-**关键事实（终审核实）**：`@deepseek-ai/dsh-base` bundle 的 patch **默认挂载 18 个模型工具插件**——bash（tool-bash/tool-pwsh/tool-jobs）、fs（tool-fs/tool-fs-search）、skill（tool-skill）、subagent（tool-subagent/control/report/fork）、workflow（tool-workflow）、goal（tool-goal/command-goal）、ralph（tool-ralph）、todo（tool-todo）、web（tool-web）、plan-mode 等。**只插入 wx 插件而不禁用这些，能力边界形同虚设**。
+**关键事实（复审修正）**：`@deepseek-ai/dsh-base` bundle 的 patch **默认挂载全部模型工具**——bash（tool-bash/tool-pwsh/tool-jobs）、fs（tool-fs/tool-fs-search）、skill（tool-skill）、subagent（tool-subagent/control/report/fork 及其提供者 subagent/spawn/fork）、workflow（tool-workflow + workflow-worker-thread）、goal（tool-goal/command-goal + goal/goal-round-driver）、ralph（tool-ralph）、todo（tool-todo）、web（web/tool-web/web-search-deepseek）、commands、plan-mode、tool-result-pruner、tool-str-replace-editor 等。**只插入 wx 插件而不禁用这些，能力边界形同虚设。**
 
-`scratch-plugin/deploy/cordis.patch.yml`（patch 层，按 id 重新插入 dsh-base 的无关工具行并 `disabled: true`——与 headless bundle 里 `- id: hmr` + `disabled: true` 的覆盖语义一致，「后写胜出」）：
+**禁用机制（关键——必须用顶层条目，不要包在 `- insert:` 里）**：loader 的 `applyEntryPatches` 对**顶层** `- id: X` + 字段名的条目执行「按 id 就地覆盖」（`entryMap.get(id)` + `target[key]=value`），这是 headless（`- id: hmr` / `disabled: true`）和 web-app（`- id: tool-bash` / `disabled: true`）都用的有效写法；而 `- insert:` 里的条目是**追加新行**（`push` 不去重），对同 id 会造成 **duplicate loader entry id 启动崩溃**。**因此禁用行一律写顶层，业务插件（新 id）用 `- insert:`。**
+
+`scratch-plugin/deploy/cordis.patch.yml`：
 
 ```yaml
-# ── 能力边界：禁用 dsh-base 默认挂载的所有无关工具 ──
-- insert:
-    - id: tool-bash
-      disabled: true
-    - id: tool-pwsh
-      disabled: true
-    - id: tool-jobs
-      disabled: true
-    - id: tool-fs
-      disabled: true
-    - id: tool-fs-search
-      disabled: true
-    - id: tool-skill
-      disabled: true
-    - id: tool-subagent-control
-      disabled: true
-    - id: tool-subagent-list-agents
-      disabled: true
-    - id: tool-subagent
-      disabled: true
-    - id: tool-subagent-fork
-      disabled: true
-    - id: tool-subagent-report
-      disabled: true
-    - id: tool-workflow
-      disabled: true
-    - id: tool-result-pruner
-      disabled: true
-    - id: tool-todo
-      disabled: true
-    - id: tool-goal
-      disabled: true
-    - id: command-goal
-      disabled: true
-    - id: tool-ralph
-      disabled: true
-    - id: tool-web
-      disabled: true
-    - id: tool-str-replace-editor
-      disabled: true
-    - id: plan-mode
-      disabled: true
-    - id: goal
-      disabled: true
-    - id: goal-round-driver
-      disabled: true
-    - id: web
-      disabled: true
-    - id: web-search-deepseek
-      disabled: true
-    - id: command-compact
-      disabled: true
-    - id: command-feedback
-      disabled: true
-    - id: commands
-      disabled: true
-    - id: skill
-      disabled: true
+# ── 能力边界：禁用 dsh-base 默认挂载的所有无关工具（顶层条目按 id 就地覆盖） ──
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: skill
+  disabled: true
+- id: skill-filesystem
+  disabled: true
+- id: skill-badge
+  disabled: true
+- id: commands
+  disabled: true
+- id: command-feedback
+  disabled: true
+- id: command-goal
+  disabled: true
+- id: command-compact
+  disabled: true
+- id: goal
+  disabled: true
+- id: goal-round-driver
+  disabled: true
+- id: plan-mode
+  disabled: true
+- id: subagent
+  disabled: true
+- id: subagent-spawn-in-process
+  disabled: true
+- id: subagent-fork-in-process
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+- id: tool-subagent-list-agents
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-subagent-report
+  disabled: true
+- id: workflow-worker-thread
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-result-pruner
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: tool-ralph
+  disabled: true
+- id: tool-str-replace-editor
+  disabled: true
+- id: web
+  disabled: true
+- id: web-search-deepseek
+  disabled: true
+- id: tool-web
+  disabled: true
 
-# ── 业务插件 ──
+# ── 业务插件（新 id，用 - insert: 追加） ──
 - insert:
     - id: wx-agent
       name: './plugins/wx-plugin.ts'
@@ -1669,7 +1683,7 @@ $DSH_HOME/profiles/wx-dsh/          # DSH_HOME 默认为 /opt/wx-dsh-agent
         secret: !!js "process.env.WX_BOT_SECRET"
 ```
 
-> 禁用行 `name` 可省略（patch 按 id 定位覆盖已插入的行，headless 里 `- id: hmr` 只有 `disabled: true` 即如此）。保留的引擎能力行（timer/llm/session/agent/agent-loop/tools/system-prompt/persistence/checkpoint/token-meter/compaction/session-query 等）不触碰。
+> 禁用行的 `name` 可省略（顶条目仅覆盖字段）。保留的引擎能力行（timer/llm/llm-deepseek/session/agent/agent-loop/tools/system-prompt/persistence/checkpoint/token-meter/compaction/session-query/settings/credentials/permission/approval/bash-sandbox/fs-sandbox/sandbox-policy/agent-instructions/spill-*/attachment-local/timer/hmr 等）不触碰——注意 bash-sandbox/fs-sandbox 是沙箱**提供者**（非模型工具），工具被禁用后它们无 consumer，可保留亦可一并禁（实现时按是否报「provider 无 consumer」噪音决定）。
 
 - [ ] **Step 3: 实现 systemd 单元**
 
@@ -1700,7 +1714,7 @@ WantedBy=multi-user.target
 1. 临时目录跑 build 脚本（`OUT=$(mktemp -d)` + 指定 DSH_REPO）；
 2. 断言产物文件齐全（profiles/wx-dsh/{package.json,cordis.patch.yml,plugins/}、data/、.env.example）；
 3. 断言部署文件不含残余 `/opt/wx-dsh-agent/plugins` 占位；
-4. **能力边界断言（不再只 grep patch 文本——须对「有效组合树」断言，防 dsh-base 默认挂载造成假绿）**：用 `dsh --profile wx-dsh --dump-config`（或 dsh CLI 提供的等价「解析后配置导出」命令；若不存在，则用最小组合启动并断言进程未注册这些工具）断言解析后的有效配置中 **不启用** 以下插件：`dsh-tool-bash`/`dsh-tool-fs`/`dsh-tool-web`/`dsh-tool-subagent`/`dsh-tool-workflow`/`dsh-tool-goal`/`dsh-tool-ralph`/`dsh-tool-todo`/`dsh-tool-skill`/`dsh-tool-jobs`/`plan-mode`；同时断言 `dsh-tool-call-timeout-policy`/`dsh-repeat-tool-reminder` 保持启用；
+4. **能力边界断言（不再只 grep patch 文本——须对「有效组合树」断言，防 dsh-base 默认挂载造成假绿）**：用 `dsh --profile wx-dsh --dump-config`（或 dsh CLI 提供的等价「解析后配置导出」命令；若不存在，则用最小组合启动并断言进程未注册这些工具）断言解析后的有效配置中 **不启用** 以下完整工具集：`dsh-tool-bash`、`dsh-tool-pwsh`、`dsh-tool-jobs`、`dsh-tool-fs`、`dsh-tool-fs-search`、`dsh-tool-skill`、`dsh-tool-subagent`（含 control/fork/report/list-agents）、`dsh-tool-workflow`、`dsh-tool-goal`、`dsh-tool-ralph`、`dsh-tool-todo`、`dsh-tool-web`、`dsh-tool-str-replace-editor`、`dsh-tool-result-pruner`、`plan-mode`、`dsh-web`、`dsh-web-search-deepseek`、`dsh-command-compact`、`dsh-command-feedback`、`dsh-command-goal`、`dsh-commands`、`dsh-skill`、`dsh-subagent`、`dsh-subagent-spawn-in-process`、`dsh-subagent-fork-in-process`、`dsh-workflow-worker-thread` 均**不出现**（若 dump 输出依赖启用才打印，则断言这些 id 位于 `disabled` 分支而非 enabled）；同时断言 `dsh-tool-call-timeout-policy`/`dsh-repeat-tool-reminder` 保持启用，且 **`@deepseek-ai/dsh-web-app` 未出现在 profiles/wx-dsh/package.json 的 bundles 中**；
 5. 用假的 `WX_BOT_ID`/`WX_BOT_SECRET` + 假网关密钥（`WX_PRO_HMAC_KEY`/`WX_PRO_GATEWAY`）设环境变量，`DSH_HOME=$OUT` 下启动 `dsh --profile wx-dsh` → 断言进程存活（WS 重连循环不崩溃）；
 6. `SIGTERM` 后断言退出码 0（DSH CLI 已实现 SIGTERM→exit 0，见 `apps/cli/src/profile-boot.ts`）→ 清理。
 
