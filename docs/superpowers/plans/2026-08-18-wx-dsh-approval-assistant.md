@@ -253,7 +253,7 @@ git commit -m "feat(scratch-plugin): env-injected hmac keys, template config, no
 **Files:**
 - Delete: `scratch-plugin/src/wx/session.ts`
 - Modify: `scratch-plugin/src/wx/api.ts`
-- Modify: `scratch-plugin/src/wx/wx-plugin.ts`（wxHome 可选、defaultAccount、无参 load）
+- Modify: `scratch-plugin/src/wx-plugin.ts`（wxHome 可选、defaultAccount、无参 load）
 - Modify: `scratch-plugin/src/wx/types.ts`（WxOpContext 增加 account/defaultAccount 字段并移入 types.ts；wx-plugin.ts 的既有 `import type { WxOpContext } from './wx/api.ts'` 同步改为从 types 导入或保留 api.ts 的 re-export）
 - Create: `scratch-plugin/src/wx/api.test.ts`
 - Modify: `scratch-plugin/wx-plugin.test.ts`
@@ -819,7 +819,7 @@ export async function wxConfirmApprove(
 }
 ```
 
-`callList`/`callDetail`/`executeApprove` 复用 `callOp` 的请求构造逻辑（按 `ref.biz.list` / `ref.biz.detail` / `ref.biz.ops.approve|reject` 的 method/path/requestBody/requestQuery 发请求、渲染返回）；`executeApprove` 用 `p.env` 调 `ctx.config.getReadyEnv(p.env)` 解析网关与密钥（不依赖 confirm 传入的默认环境）。**注意**：`findRecord`/`approveParams` 的 `fetcher`/`fetchDetail` 签名要求**原始响应体** `{ body: string }`（供 `extractRecords` 解析），不能直接传返回渲染文本的 `callOp`——`callList`/`callDetail` 是独立的「只发请求并返回原始 body」helper，与 `callOp` 的渲染路径区分。**UX 对齐 Go**：`wxConfirmApprove` 成功时返回 `已执行审批通过/驳回：\n<结果>`（前缀对齐 Go orchestrator.go 的 `已执行<verb>：\n` 拼接），Steps 测试的 `expect(out).toContain('ok')` 对前缀不敏感（toContain），无需改断言。
+`callList`/`callDetail`/`executeApprove` 复用 `callOp` 的请求构造逻辑（按 `ref.biz.list` / `ref.biz.detail` / `ref.biz.ops.approve|reject` 的 method/path/requestBody/requestQuery 发请求、渲染返回）；`executeApprove` 用 `p.env` 调 `ctx.config.getReadyEnv(p.env)` 解析网关与密钥（不依赖 confirm 传入的默认环境）。**注意**：`findRecord`/`approveParams` 的 `fetcher`/`fetchDetail` 签名要求**原始响应体** `{ body: string }`（供 `extractRecords` 解析），不能直接传返回渲染文本的 `callOp`——`callList`/`callDetail` 是独立的「只发请求并返回原始 body」helper，与 `callOp` 的渲染路径区分。**UX 对齐 Go**：`wxConfirmApprove` 成功时返回 `已执行审批通过/驳回：\n<结果>`（前缀对齐 Go orchestrator.go 的 `已执行<verb>：\n` 拼接），Steps 测试的 `expect(out).toContain('ok')` 对前缀不敏感（toContain），无需改断言。**防御**：`WxOpContext.pending` 是可选字段，`wxPrepareApprove`/`wxConfirmApprove` 在 `ctx.pending.set/take` 前先判空（`const pending = ctx.pending; if (!pending) throw new Error('缺 pending 存储（插件未注入）')`），满足 strict TS 非空断言。
 
 `wx-plugin.ts`：注册 `wx_confirm`（参数 decision: confirm/cancel）；wx_approve 改为调 `wxPrepareApprove`（不执行写操作）；backend 上下文带 `pending` 实例（每插件实例一个 PendingStore）。
 
@@ -922,7 +922,7 @@ Expected: FAIL —— `Auditor` 不存在。
 
 - [ ] **Step 3: 实现 auditor + 接线**
 
-`audit.ts`：`Auditor` 类，构造收 `filePath`；`record(entry)` 追加一行 JSON（`JSON.stringify(entry)` + `\n`），用 `mkdir(dirname, { recursive: true })` 自动建目录；`appendFile` 失败时 `console.warn`（不抛错，审计失败不应阻断审批）。
+`audit.ts`：`Auditor` 类，构造收 `filePath`；**`record(entry)` 必须是 async**（返回 Promise——测试用 `resolves.toBeUndefined()` 断言，见审计测试），实现为：`mkdir(dirname, { recursive: true })` 自动建目录 + `appendFile` 追加一行 JSON（`JSON.stringify(entry)` + `\n`）；`appendFile` 失败时 `console.warn`（不抛错，审计失败不应阻断审批）。
 
 `api.ts` 接线：`WxOpContext` 增加可选 `auditor?: Auditor`；`wxPrepareApprove` 在存 pending 后 `ctx.auditor?.record({...})`；`wxConfirmApprove` 在 cancel/success/failure 各分支记录（record 调用不 await 阻塞——fire-and-forget 或并发，但审计失败不改变返回）。
 
@@ -1079,6 +1079,27 @@ describe('ConnectionManager', () => {
     expect(ws.sent.some((s) => s.includes('网关超时'))).toBe(true)
     conn.stop()
   })
+
+  it('sends an app-level heartbeat frame every heartbeatMs after subscribing', () => {
+    const { conn, sockets } = setup()
+    conn.start()
+    const ws = sockets[0]!
+    ws.emit('message', JSON.stringify({ errcode: 0, errmsg: 'ok', headers: { req_id: '' } }))
+    vi.advanceTimersByTime(30_000)   // heartbeatMs 默认 30000
+    expect(ws.sent.some((s) => s.includes('aibot_heartbeat'))).toBe(true)
+    conn.stop()
+  })
+
+  it('closes and reconnects a stalled connection (read-timeout)', () => {
+    const { conn, sockets } = setup()
+    conn.start()
+    const ws = sockets[0]!
+    ws.emit('message', JSON.stringify({ errcode: 0, errmsg: 'ok', headers: { req_id: '' } }))
+    // 不 emit 任何帧，推进超过读超时（35s）→ 判定连接僵死 → close + 重连
+    vi.advanceTimersByTime(35_000)
+    expect(sockets.length).toBeGreaterThanOrEqual(2)
+    conn.stop()
+  })
 })
 ```
 
@@ -1089,12 +1110,13 @@ Expected: FAIL —— `ConnectionManager` 不存在。
 
 - [ ] **Step 3: 实现 ConnectionManager（心跳策略明确化）**
 
-**心跳策略（评审修正：Node 22 原生 WebSocket 没有 `ping()` 方法，无法移植 Go 版的 WS 控制帧 ping）**。选定方案：**应用层心跳文本帧 + 服务端 ping 自动 pong**——
+**心跳策略（评审修正：Node 22 原生 WebSocket 没有 `ping()` 方法，无法移植 Go 版的 WS 控制帧 ping）**。选定方案：**应用层心跳文本帧 + 读超时检测**——
 
-- Node 原生 WebSocket（undici）遇到服务端发来的 ping 会自动回 pong（协议层内置），所以服务端主动探活能收到 pong；
-- 应用层每隔 30s 发送一条 `aibot_heartbeat` 文本帧（若企微协议不支持该命令会被 ack 为「命令拒绝」并忽略，不致命）；若协议文档没有应用层心跳命令，则退化为「读超时检测」：`setInterval(35s)` 检查最近一次收到任何帧的时间，超过阈值判定连接僵死 → 主动 close 触发重连；
-- 新连接建立后**第一个消息帧必须是订阅 ack**（state 机）：状态 `SUBSCRIBING → SUBSCRIBED`，在 SUBSCRIBING 状态收到 errcode≠0 的 ack → close 并重连（3s）；
-- 断线（`onclose` / 心跳超时）→ 3 秒后重连（移植 Go 版 `Run()` 循环）；
+- 订阅成功后 `setInterval(heartbeatMs, 30s)` 发送一条 `aibot_heartbeat` 文本帧（若企微协议不支持该命令会被 ack 为「命令拒绝」并忽略，不致命；新测试断言该帧确实被发送）；
+- **读超时检测（僵死连接判定）**：记录 `lastFrameAt`（每次收到任何帧更新），`setInterval` 每 5s 检查一次，超过 `readTimeoutMs`（默认 35s = heartbeatMs + 5s）未收到任何帧 → 判定连接僵死 → `ws.close()` 触发重连（新测试断言推进 35s 后出现第二个 socket）；
+- 服务端 ping 由 Node 原生 WebSocket（undici）自动回 pong，协议层内置，无需自实现；
+- 新连接建立后**第一个消息帧必须是订阅 ack**（state 机）：状态 `SUBSCRIBING → SUBSCRIBED`，在 SUBSCRIBING 状态收到 errcode≠0 的 ack → **同步** close 并重连（3s；测试断言 `ws.closed || conn.isStopped()` 在 emit 后立即成立，close 不能推迟到微任务）；
+- 断线（`onclose` / 读超时 / 订阅拒绝）→ 3 秒后重连（移植 Go 版 `Run()` 循环）；
 - 读循环异步：`onmessage` 仅 `void this.handleMessage(msg)`，不阻塞后续帧（详见 Task 3.3 的 Router 串行化）；
 - `handleMessage` 内部 `try { reply = await onMessage(msg) } catch (e) { reply = '处理失败：' + (e.message) + '（请稍后重试）' }` 再发送——ConnectionManager 统一捕获 `onMessage` 拒绝并回复具体错误（spec §7，不做模糊回复）；
 - `isStopped()` / `stop()` 供测试与优雅退出（SIGTERM 时调用）。
@@ -1245,17 +1267,44 @@ describe('bridge plugin registration', () => {
 // userID→account 注入测试（spec §5 身份模型、§3 消息路由到 X-Account）
 import { describe, it, expect } from 'vitest'
 import { Router } from './session-router.ts'
+import { wxQueryTodo } from '../wx/api.ts'
+import { WxConfig } from '../wx/config.ts'
+import { WxRegistry } from '../wx/registry.ts'
+import { PendingStore } from '../wx/pending.ts'
+import type { AgentSessionProvider } from './session-router.ts'
+import type { WxOpContext } from '../wx/types.ts'
 
-describe('userID propagation to wx tools', () => {
-  it('passes the WS userID through the provider to become the account', async () => {
-    const seen: string[] = []
+describe('userID propagation to wx tools (closed loop)', () => {
+  // 硬性闭环：WS userID → provider → resolveAccount → WxOpContext.account → X-Account
+  it('a WS message userID ends up as the gateway X-Account on wx tool calls', async () => {
+    const captured: string[] = []
+    const sessionUsers = new Map<string, string>()   // agentId -> userID（Step 4 的真实接线）
     const provider: AgentSessionProvider = {
-      async prompt(userID) { seen.push(userID); return 'ok' },
+      async prompt(userID, text) {
+        // 模拟 defaultSessionPrompt：注册 agentId→userID（Step 4 的实现细节）
+        sessionUsers.set('agent-1', userID)
+        // 用注入的 account 调用 wx 工具（与真实 agent 工具执行同路径）
+        const ctx: WxOpContext = {
+          config: await WxConfig.load(),
+          registry: await WxRegistry.load(),
+          defaultEnv: 'test',
+          pending: new PendingStore(5 * 60_000),
+          account: sessionUsers.get('agent-1'),      // resolveAccount 的结果
+          transport: {
+            async do(o: { account: string; path: string }) {
+              captured.push(o.account)
+              return { body: JSON.stringify({ data: { page: { data: { data: [], total: 0 } } } }) }
+            },
+            async getMemberCode() { return 'M1001' },
+          },
+        }
+        await wxQueryTodo(ctx as never, { biz: 'purchase.generay' })
+        return 'done'
+      },
     }
     const r = new Router(provider)
-    await r.handle({ userID: 'wx-user-9', text: 'hi' })
-    expect(seen).toEqual(['wx-user-9'])
-    // wx 工具侧：provider 实现把 userID 作为 WxOpContext.account 注入（详见 Step 4）
+    await r.handle({ userID: 'wx-user-9', text: '查待办' })
+    expect(captured[0]).toBe('wx-user-9')   // X-Account === userID（闭环断言）
   })
 })
 ```
@@ -1264,6 +1313,8 @@ describe('userID propagation to wx tools', () => {
 
 Run: `cd /Users/yangjingting/develop/ai/deepseek-harness/scratch-plugin && npx vitest run src/wecom-bridge/bridge-plugin.test.ts`
 Expected: FAIL —— `bridge-plugin.ts` 不存在。
+
+> 注意：闭环测试会调 `purchase.generay` 的 `wxQueryTodo` → `readySession` → `getReadyEnv`，需要 `WX_TEST_HMAC_KEY`/`WX_TEST_GATEWAY` 环境变量（同 api.test.ts 的 saved/restore 模式，测试内设置或运行时通过命令注入）。若运行报「缺少密钥」，按 api.test.ts 的 afterEach 恢复模式补上环境变量设置。
 
 - [ ] **Step 3: 实现 bridge-plugin.ts**
 
