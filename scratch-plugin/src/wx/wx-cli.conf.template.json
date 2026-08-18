@@ -1,0 +1,7 @@
+{
+  "environments": {
+    "test": { "gateway": "", "hmac_key": "", "corpid": "", "default_corp_iden": "" },
+    "uat": { "gateway": "", "hmac_key": "", "corpid": "", "default_corp_iden": "" },
+    "pro": { "gateway": "", "hmac_key": "", "corpid": "", "default_corp_iden": "" }
+  }
+}
