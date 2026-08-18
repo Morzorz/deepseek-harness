@@ -1414,15 +1414,17 @@ git commit -m "feat(scratch-plugin): wecom bridge plugin wiring messages into ag
 
 目标：产出服务器部署目录（自包含、systemd 可托管）、只暴露审批能力的 cordis.yml，以及打包脚本；不挂 bash/fs/web/subagent 等无关能力。
 
-### Task 4.1: 部署组合配置（能力收敛）
+### Task 4.1: 部署组合配置（能力收敛参考文档）
 
 **Files:**
-- Create: `scratch-plugin/deploy/cordis.yml`
+- Create: `scratch-plugin/deploy/cordis.yml`（**参考文档**：完整组合意图，供阅读/评审；实际部署由 Task 4.2 的 cordis.patch.yml 驱动）
 - Create: `scratch-plugin/deploy/README.md`
 
-- [ ] **Step 1: 写部署组合配置（引擎部分完整钉死 + 显式关闭非审批工具）**
+> **与 Task 4.2 的关系（终审核实后明确）**：实际部署走 **profile + dsh-base bundle + cordis.patch.yml 覆盖**（Task 4.2），因为 `dsh --profile` 只接受 profile 名（不能是文件路径），且 profile-boot 会以空 `[]` 覆盖根配置——完整 entry 列表形式的 `deploy/cordis.yml` 无法被部署载体消费。因此本文件定位为**组合意图参考**（展示：最小引擎集 + 审批工具 + persona + 能力边界在该组合下如何表现），供评审与排障对照，build 脚本**不**拷贝它。
 
-**关键事实（评审核实）**：示例用的 `@deepseek-ai/dsh-agent-spine-demo` **默认自注册模型可见的 bash、skill、jobs 工具**（`packages/examples/agent-spine-demo/src/index.ts`：`toolBash` 默认开、`toolJobs` 默认开、skill 工具挂载在 `skills.tool` 由 `skills.enabled` 门控），并且 schema 要求 `workspaceContext` 与 `dshHome`。要实现 spec §8.1 的硬边界，必须**显式关闭**：`toolBash: false`、`toolJobs: false`、`skills.enabled: false`、`workspaceContext: false`（skill 工具由 `skills.enabled` 统管，**没有**顶层的 `toolSkill` key，不要写非 schema 键 <—— 注：schemastery 会合并未知键不报错，但为清晰起见只写真实存在的 key）。
+- [ ] **Step 1: 写参考组合配置（引擎部分完整钉死 + 显式关闭非审批工具）**
+
+**关键事实（终审核实）**：以下参考组合基于 `@deepseek-ai/dsh-agent-spine-demo`（独立自注册 bash/skill/jobs 工具的入口组合），**默认自注册模型可见的 bash、skill、jobs 工具**（`packages/examples/agent-spine-demo/src/index.ts`：`toolBash` 默认开、`toolJobs` 默认开、skill 工具挂载在 `skills.tool` 由 `skills.enabled` 门控），并且 schema 要求 `workspaceContext` 与 `dshHome`。要实现 spec §8.1 的硬边界，必须**显式关闭**：`toolBash: false`、`toolJobs: false`、`skills.enabled: false`、`workspaceContext: false`（skill 工具由 `skills.enabled` 统管，**没有**顶层的 `toolSkill` key，不要写非 schema 键 <—— 注：schemastery 会合并未知键不报错，但为清晰起见只写真实存在的 key）。
 
 `scratch-plugin/deploy/cordis.yml` 完整内容（基线参照 `examples/headless-agent/cordis.yml` 的 agent-spine/LLM/persistence/guard 最小集；**不挂** bash/fs/web/subagent/workflow/goal/ralph/todo/skill/jobs）：
 
@@ -1522,9 +1524,9 @@ git commit -m "feat(scratch-plugin): wecom bridge plugin wiring messages into ag
 
 要点：
 - 环境变量统一用 `!!js "process.env.X"` 语法（仓库唯一支持的插值；`${...}` 无效）；
-- 插件路径用部署绝对路径占位，由 Task 4.2 的 build 脚本在生成部署目录时替换为实际路径；
-- 服务器默认 `defaultEnv: 'pro'`（测试环境仅供本机调试）。
-- 最后用 `verify-cordis-config` 或 DSH 的 config 校验检查组合可加载（若该 gate 存在于仓库 gates，亦可在 smoke 中覆盖）。
+- 插件路径此处用部署绝对路径占位（参考文档），Task 4.2 的实际部署 patch 用相对 `plugins/...` 路径；
+- 服务器默认 `defaultEnv: 'pro'`（测试环境仅供本机调试）；
+- 这是参考文档，不直接参与部署；部署组合的生效路径见 Task 4.2（dsh-base bundle + patch 覆盖 + profile 名启动）。
 
 - [ ] **Step 2: 写部署 README（环境变量清单、启动方式、systemd 示例）**
 
@@ -1584,11 +1586,73 @@ $DSH_HOME/profiles/wx-dsh/          # DSH_HOME 默认为 /opt/wx-dsh-agent
 5. `mkdir -p "$OUT/data"`；生成 `$OUT/.env.example`（环境变量模板）；
 6. 输出部署目录结构。
 
-- [ ] **Step 2: 实现 cordis.patch.yml（部署专用）**
+- [ ] **Step 2: 实现 cordis.patch.yml（部署专用，含能力边界禁用）**
 
-`scratch-plugin/deploy/cordis.patch.yml`（patch 层，仅插入两个插件；引擎/agent-spine/LLM/persistence/guard 由 profile 的 bundles 提供，patch 只追加业务插件；若 bundles 不提供 agent 组合，则 patch 同时插入 agent-spine 配置——实现时以 headless-agent 的 bundle 实际内容核对）：
+**关键事实（终审核实）**：`@deepseek-ai/dsh-base` bundle 的 patch **默认挂载 18 个模型工具插件**——bash（tool-bash/tool-pwsh/tool-jobs）、fs（tool-fs/tool-fs-search）、skill（tool-skill）、subagent（tool-subagent/control/report/fork）、workflow（tool-workflow）、goal（tool-goal/command-goal）、ralph（tool-ralph）、todo（tool-todo）、web（tool-web）、plan-mode 等。**只插入 wx 插件而不禁用这些，能力边界形同虚设**。
+
+`scratch-plugin/deploy/cordis.patch.yml`（patch 层，按 id 重新插入 dsh-base 的无关工具行并 `disabled: true`——与 headless bundle 里 `- id: hmr` + `disabled: true` 的覆盖语义一致，「后写胜出」）：
 
 ```yaml
+# ── 能力边界：禁用 dsh-base 默认挂载的所有无关工具 ──
+- insert:
+    - id: tool-bash
+      disabled: true
+    - id: tool-pwsh
+      disabled: true
+    - id: tool-jobs
+      disabled: true
+    - id: tool-fs
+      disabled: true
+    - id: tool-fs-search
+      disabled: true
+    - id: tool-skill
+      disabled: true
+    - id: tool-subagent-control
+      disabled: true
+    - id: tool-subagent-list-agents
+      disabled: true
+    - id: tool-subagent
+      disabled: true
+    - id: tool-subagent-fork
+      disabled: true
+    - id: tool-subagent-report
+      disabled: true
+    - id: tool-workflow
+      disabled: true
+    - id: tool-result-pruner
+      disabled: true
+    - id: tool-todo
+      disabled: true
+    - id: tool-goal
+      disabled: true
+    - id: command-goal
+      disabled: true
+    - id: tool-ralph
+      disabled: true
+    - id: tool-web
+      disabled: true
+    - id: tool-str-replace-editor
+      disabled: true
+    - id: plan-mode
+      disabled: true
+    - id: goal
+      disabled: true
+    - id: goal-round-driver
+      disabled: true
+    - id: web
+      disabled: true
+    - id: web-search-deepseek
+      disabled: true
+    - id: command-compact
+      disabled: true
+    - id: command-feedback
+      disabled: true
+    - id: commands
+      disabled: true
+    - id: skill
+      disabled: true
+
+# ── 业务插件 ──
 - insert:
     - id: wx-agent
       name: './plugins/wx-plugin.ts'
@@ -1604,6 +1668,8 @@ $DSH_HOME/profiles/wx-dsh/          # DSH_HOME 默认为 /opt/wx-dsh-agent
         botID: !!js "process.env.WX_BOT_ID"
         secret: !!js "process.env.WX_BOT_SECRET"
 ```
+
+> 禁用行 `name` 可省略（patch 按 id 定位覆盖已插入的行，headless 里 `- id: hmr` 只有 `disabled: true` 即如此）。保留的引擎能力行（timer/llm/session/agent/agent-loop/tools/system-prompt/persistence/checkpoint/token-meter/compaction/session-query 等）不触碰。
 
 - [ ] **Step 3: 实现 systemd 单元**
 
@@ -1630,7 +1696,15 @@ WantedBy=multi-user.target
 
 - [ ] **Step 4: 部署冒烟测试（可离线）**
 
-`smoke.sh`：临时目录跑 build 脚本（`OUT=$(mktemp -d)` + 指定 DSH_REPO）→ 断言产物文件齐全（profiles/wx-dsh/{package.json,cordis.patch.yml,plugins/}、data/、.env.example）→ 断言部署文件不含残余 `/opt/wx-dsh-agent/plugins` 占位 → 断言禁止能力插件未出现（grep 检查 `dsh-bash`/`dsh-fs`/`dsh-tool-web`/`subagent`/`workflow` 等未出现在 patches）→ 用假的 `WX_BOT_ID`/`WX_BOT_SECRET` + 假网关密钥（`WX_PRO_HMAC_KEY`/`WX_PRO_GATEWAY`）设环境变量，`DSH_HOME=$OUT` 下启动 `dsh --profile wx-dsh` → 断言进程存活（WS 重连循环不崩溃）→ `SIGTERM` 后断言退出码 0（DSH CLI 已实现 SIGTERM→exit 0，见 `apps/cli/src/profile-boot.ts`）→ 清理。
+`smoke.sh`：
+1. 临时目录跑 build 脚本（`OUT=$(mktemp -d)` + 指定 DSH_REPO）；
+2. 断言产物文件齐全（profiles/wx-dsh/{package.json,cordis.patch.yml,plugins/}、data/、.env.example）；
+3. 断言部署文件不含残余 `/opt/wx-dsh-agent/plugins` 占位；
+4. **能力边界断言（不再只 grep patch 文本——须对「有效组合树」断言，防 dsh-base 默认挂载造成假绿）**：用 `dsh --profile wx-dsh --dump-config`（或 dsh CLI 提供的等价「解析后配置导出」命令；若不存在，则用最小组合启动并断言进程未注册这些工具）断言解析后的有效配置中 **不启用** 以下插件：`dsh-tool-bash`/`dsh-tool-fs`/`dsh-tool-web`/`dsh-tool-subagent`/`dsh-tool-workflow`/`dsh-tool-goal`/`dsh-tool-ralph`/`dsh-tool-todo`/`dsh-tool-skill`/`dsh-tool-jobs`/`plan-mode`；同时断言 `dsh-tool-call-timeout-policy`/`dsh-repeat-tool-reminder` 保持启用；
+5. 用假的 `WX_BOT_ID`/`WX_BOT_SECRET` + 假网关密钥（`WX_PRO_HMAC_KEY`/`WX_PRO_GATEWAY`）设环境变量，`DSH_HOME=$OUT` 下启动 `dsh --profile wx-dsh` → 断言进程存活（WS 重连循环不崩溃）；
+6. `SIGTERM` 后断言退出码 0（DSH CLI 已实现 SIGTERM→exit 0，见 `apps/cli/src/profile-boot.ts`）→ 清理。
+
+> 若 `--dump-config` 不存在：评估/实施阶段先查 `apps/cli` 与 `packages/boot` 是否有「解析后配置导出」入口（如 `--dump` 或 `log-level` 输出组合）；若没有，则第 4 步退化为一并校验「patch 中所有工具行均已 `disabled: true` + 启动日志中这些工具未注册」，并在启用功能测试里通过 `wx_query_biz`（只有一个业务工具集）间接验证。
 
 - [ ] **Step 5: Commit**
 
@@ -1690,11 +1764,11 @@ git commit -m "test(scratch-plugin): approval dialog end-to-end integration test
 - [ ] `cd /Users/yangjingting/develop/ai/deepseek-harness/scratch-plugin && WX_TEST_HMAC_KEY=test-key WX_TEST_GATEWAY=http://localhost:9090 npx vitest run` 全绿；
 - [ ] 类型检查：`cd /Users/yangjingting/develop/ai/deepseek-harness/scratch-plugin && npx tsc -p .`（tsconfig noEmit）无错误；在仓库根 `pnpm run typecheck`（若包含 scratch-plugin 则必须通过，否则跳过并记录原因）；
 - [ ] 全仓库 grep 无 `wxHome` 残留必需引用（调试覆盖参数以 `wxHome?` 可选形式保留可接受）；
-- [ ] `scratch-plugin/deploy/smoke.sh` 在干净临时目录通过（含部署产物完整性、禁止能力插件未出现、SIGTERM 退出码 0 断言）；
+- [ ] `scratch-plugin/deploy/smoke.sh` 在干净临时目录通过（含部署产物完整性、**有效组合树中禁止能力插件未启用**、SIGTERM 退出码 0 断言）；
 - [ ] 无真实密钥提交（git log 检查 `wx-cli.conf.json` 未入库）；
-- [ ] 部署 cordis.yml 无残留占位路径（Task 4.2 的 sed 替换后，部署目录内 grep `/opt/wx-dsh-agent` 不出现）；
+- [ ] 部署产物：profile 目录（package.json/cordis.patch.yml/plugins/）齐全，`cordis.patch.yml` 中插件用相对 `plugins/...` 路径（无 `/opt/wx-dsh-agent` 残留），且所有无关工具行均 `disabled: true`；
 - [ ] 设计文档与计划文档均已提交 git；修订后的计划已重新评审通过。
 
 ## 实施顺序建议
 
-Chunk 1 → Chunk 2 → Chunk 3 → Chunk 4。每 Chunk 结束跑一次全量 vitest；Chunk 3 的 Task 3.4 需要先阅读 DSH agent 会话 API（`packages/core/agent/` README + `packages/acp/` 的 bridge 实现模式——create session → followup → whenIdle → 收集 committed assistant 文本），如接口与计划假设不符，按实际 API 调整实现并更新本计划。Task 4.2 的形态 A 依赖 `apps/cli` 的 profile-boot 与 dsh CLI 的 profile 参数用法，实施前阅读 `apps/cli/README.md` 确认命令形态。
+Chunk 1 → Chunk 2 → Chunk 3 → Chunk 4。每 Chunk 结束跑一次全量 vitest；Chunk 3 的 Task 3.4 需要先阅读 DSH agent 会话 API（`packages/core/agent/` README + `packages/acp/` 的 bridge 实现模式——create session → followup → whenIdle → 收集 committed assistant 文本），如接口与计划假设不符，按实际 API 调整实现并更新本计划。Task 4.2 依赖 `apps/cli` 的 profile-boot 与 dsh CLI 的 profile 参数用法，以及 `packages/bundle/base/cordis.patch.yml` 的完整工具行清单（禁用覆盖清单需与实际行 id 一致），实施前阅读 `apps/cli/README.md` 与 dsh-base patch 确认。
