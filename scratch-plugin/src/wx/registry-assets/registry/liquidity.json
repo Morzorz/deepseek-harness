@@ -1,0 +1,42 @@
+{
+  "name": "资金流动性系统",
+  "bizs": {
+    "flm": {
+      "name": "流动性审批",
+      "list": {
+        "path": "/enterprisewechat/api/liquidity/qywxAuditListQuery",
+        "method": "POST",
+        "requestBody": {
+          "current": "1",
+          "rowCount": "50",
+          "queryType": "0",
+          "bussType": "",
+          "domainAccount": "{{account}}"
+        },
+        "response": {
+          "path": "data",
+          "listField": "records",
+          "fields": {
+            "bussNo": "业务单号",
+            "bussType": "业务类型",
+            "auditStatusName": "审批状态",
+            "cnName": "申请人"
+          }
+        }
+      },
+      "ops": {
+        "approve": {
+          "name": "审批",
+          "path": "/enterprisewechat/api/liquidity/auditCashflow",
+          "method": "POST",
+          "requestBody": {
+            "bussNo": "{{orderNumber}}",
+            "domainAccount": "{{account}}",
+            "auditResult": "{{action}}",
+            "auditRemark": "{{remarks}}"
+          }
+        }
+      }
+    }
+  }
+}

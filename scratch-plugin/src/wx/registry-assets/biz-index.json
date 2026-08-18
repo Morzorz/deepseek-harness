@@ -1,0 +1,16 @@
+{
+  "systems": {
+    "purchase": {
+      "file": "registry/purchase.json",
+      "name": "采购系统"
+    },
+    "liquidity": {
+      "file": "registry/liquidity.json",
+      "name": "资金流动性系统"
+    },
+    "xincontract": {
+      "file": "registry/xincontract.json",
+      "name": "法务合同"
+    }
+  }
+}

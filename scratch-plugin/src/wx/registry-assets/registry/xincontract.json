@@ -1,0 +1,389 @@
+{
+  "name": "法务合同",
+  "bizs": {
+    "xincontract": {
+      "name": "鑫合同",
+      "module": "待我审批 / 已审批 / 知会我 / 我发起",
+      "list": {
+        "name": "待办列表",
+        "path": "/enterprisewechat/xincontract/external/handle_task/queryPendingTask",
+        "method": "POST",
+        "requestBody": {
+          "applySubType": "",
+          "applyType": "",
+          "applyTypeDetail": "",
+          "applyNo": "",
+          "size": "{{size|10}}",
+          "current": "{{current|1}}",
+          "deviceType": "MOBILE",
+          "domainAccount": "{{account}}",
+          "noticeStatus": ""
+        },
+        "response": {
+          "path": "data",
+          "totalField": "total",
+          "listField": "records",
+          "fields": {
+            "applyNo": "申请单号",
+            "applyTypeDetail.code": "申请类型",
+            "applyTypeDetail.message": "申请类型名称",
+            "applyName": "申请名称/合同名称",
+            "templateName": "模版名称",
+            "contractClassify": "合同分类",
+            "contractTotalAmount": "合同金额",
+            "contractBudgetAmount": "预算金额",
+            "paymentType": "付款类型",
+            "financialPayCompany": "我方付款主体",
+            "financialPayCollectionPayment": "收款方",
+            "financialApyTotalAmount": "合计金额",
+            "ticketCompanyName": "开票公司",
+            "ticketChannelName": "开票渠道",
+            "ticketApplyAmount": "开票金额",
+            "supplyBudgetType": "增补类型",
+            "applicantName": "申请人",
+            "applicantDepartmentName": "申请部门",
+            "createTime": "申请时间",
+            "startTime": "开始时间",
+            "currentWorkListName": "当前审批节点",
+            "currentApprovalInfo": "当前审批信息",
+            "handleTaskId": "待办任务ID",
+            "applyTaskId": "申请任务ID",
+            "notifyId": "知会ID"
+          }
+        }
+      },
+      "detail": {
+        "name": "待办详情",
+        "path": "/enterprisewechat/xincontract/external/handle_task/queryPendingTaskDetail",
+        "method": "POST",
+        "requestBody": {
+          "applyTaskId": "{{applyTaskId}}",
+          "applyTypeDetail": "{{applyTypeDetail}}",
+          "domainAccount": "{{account}}",
+          "id": "{{id}}",
+          "deviceType": "MOBILE"
+        },
+        "response": {
+          "path": "data",
+          "fields": {
+            "applyNo": "申请单号",
+            "applicantName": "申请人",
+            "applicantDepartmentName": "申请部门",
+            "approvalStartTime": "申请日期",
+            "applicantDomainAccount": "申请人域账号",
+            "currentWorkListName": "当前审批节点",
+            "currentWorkListId": "工作流ID",
+            "currentWorkListMembeId": "工作流成员ID",
+            "memberType.code": "审批人类型代码",
+            "memberType.message": "审批人类型",
+            "currentNodeApprovalType.code": "节点审批类型代码",
+            "currentNodeApprovalType.message": "节点审批类型",
+            "contractResponseVo.contractName": "合同名称",
+            "contractResponseVo.totalContractAmount": "合同总金额",
+            "contractResponseVo.budgetAmount": "预算金额",
+            "contractResponseVo.contractNumber": "合同编号",
+            "contractResponseVo.contractApplyType": "申请类型"
+          }
+        }
+      },
+      "ops": {
+        "listProcessed": {
+          "name": "已办列表",
+          "path": "/enterprisewechat/xincontract/external/handle_task/queryProcessedTask",
+          "method": "POST",
+          "requestBody": {
+            "applySubType": "",
+            "applyType": "",
+            "applyTypeDetail": "",
+            "applyNo": "",
+            "size": "{{size|10}}",
+            "current": "{{current|1}}",
+            "deviceType": "MOBILE",
+            "domainAccount": "{{account}}",
+            "noticeStatus": ""
+          },
+          "response": {
+            "path": "data",
+            "totalField": "total",
+            "listField": "records",
+            "fields": {
+              "applyNo": "申请单号",
+              "applyTypeDetail.code": "申请类型",
+              "applyTypeDetail.message": "申请类型名称",
+              "applyName": "申请名称/合同名称",
+              "contractClassify": "合同分类",
+              "contractTotalAmount": "合同金额",
+              "contractBudgetAmount": "预算金额",
+              "paymentType": "付款类型",
+              "financialPayCompany": "我方付款主体",
+              "financialPayCollectionPayment": "收款方",
+              "financialApyTotalAmount": "合计金额",
+              "ticketCompanyName": "开票公司",
+              "ticketChannelName": "开票渠道",
+              "ticketApplyAmount": "开票金额",
+              "applicantName": "申请人",
+              "applicantDepartmentName": "申请部门",
+              "createTime": "申请时间",
+              "currentWorkListName": "当前审批节点",
+              "currentApprovalInfo": "当前审批信息",
+              "handleTaskId": "待办任务ID",
+              "applyTaskId": "申请任务ID"
+            }
+          }
+        },
+        "listNotify": {
+          "name": "知会我列表",
+          "path": "/enterprisewechat/xincontract/external/handle_task/queryNotifyInfo",
+          "method": "POST",
+          "requestBody": {
+            "applySubType": "",
+            "applyType": "",
+            "applyTypeDetail": "",
+            "applyNo": "",
+            "size": "{{size|10}}",
+            "current": "{{current|1}}",
+            "deviceType": "MOBILE",
+            "domainAccount": "{{account}}",
+            "noticeStatus": ""
+          },
+          "response": {
+            "path": "data",
+            "totalField": "total",
+            "listField": "records",
+            "fields": {
+              "applyNo": "申请单号",
+              "applyTypeDetail.code": "申请类型",
+              "applyTypeDetail.message": "申请类型名称",
+              "applyName": "申请名称/合同名称",
+              "contractTotalAmount": "合同金额",
+              "contractBudgetAmount": "预算金额",
+              "paymentType": "付款类型",
+              "financialPayCompany": "我方付款主体",
+              "financialPayCollectionPayment": "收款方",
+              "financialApyTotalAmount": "合计金额",
+              "ticketCompanyName": "开票公司",
+              "ticketChannelName": "开票渠道",
+              "ticketApplyAmount": "开票金额",
+              "applicantName": "申请人",
+              "applicantDepartmentName": "申请部门",
+              "createTime": "申请时间",
+              "currentWorkListName": "当前审批节点",
+              "currentApprovalInfo": "当前审批信息",
+              "notifyId": "知会ID"
+            }
+          }
+        },
+        "listMine": {
+          "name": "我发起列表",
+          "path": "/enterprisewechat/xincontract/external/handle_task/queryTaskList",
+          "method": "POST",
+          "requestBody": {
+            "applySubType": "",
+            "applyType": "",
+            "applyTypeDetail": "",
+            "applyNo": "",
+            "size": "{{size|10}}",
+            "current": "{{current|1}}",
+            "deviceType": "MOBILE",
+            "domainAccount": "{{account}}",
+            "noticeStatus": ""
+          },
+          "response": {
+            "path": "data",
+            "totalField": "total",
+            "listField": "records",
+            "fields": {
+              "applyNo": "申请单号",
+              "applyTypeDetail.code": "申请类型",
+              "applyTypeDetail.message": "申请类型名称",
+              "applyName": "申请名称/合同名称",
+              "contractTotalAmount": "合同金额",
+              "contractBudgetAmount": "预算金额",
+              "paymentType": "付款类型",
+              "financialPayCompany": "我方付款主体",
+              "financialPayCollectionPayment": "收款方",
+              "financialApyTotalAmount": "合计金额",
+              "ticketCompanyName": "开票公司",
+              "ticketChannelName": "开票渠道",
+              "ticketApplyAmount": "开票金额",
+              "applicantName": "申请人",
+              "applicantDepartmentName": "申请部门",
+              "createTime": "申请时间",
+              "currentWorkListName": "当前审批节点",
+              "currentApprovalInfo": "当前审批信息",
+              "applyTaskId": "申请任务ID"
+            }
+          }
+        },
+        "detailProcessed": {
+          "name": "已办详情",
+          "path": "/enterprisewechat/xincontract/external/handle_task/queryProcessedTaskDetail",
+          "method": "POST",
+          "requestBody": {
+            "applyTaskId": "{{applyTaskId}}",
+            "applyTypeDetail": "{{applyTypeDetail}}",
+            "domainAccount": "{{account}}",
+            "id": "{{id}}",
+            "deviceType": "MOBILE"
+          },
+          "response": {
+            "path": "data",
+            "fields": {
+              "applyNo": "申请单号",
+              "applicantName": "申请人",
+              "applicantDepartmentName": "申请部门",
+              "approvalStartTime": "申请日期",
+              "currentWorkListName": "当前审批节点",
+              "contractResponseVo.contractName": "合同名称",
+              "contractResponseVo.totalContractAmount": "合同总金额",
+              "contractResponseVo.contractNumber": "合同编号",
+              "contractResponseVo.contractApplyType": "申请类型"
+            }
+          }
+        },
+        "detailNotify": {
+          "name": "知会详情",
+          "path": "/enterprisewechat/xincontract/external/handle_task/queryNotifyInfoDetail",
+          "method": "POST",
+          "requestBody": {
+            "applyTaskId": "{{applyTaskId}}",
+            "applyTypeDetail": "{{applyTypeDetail}}",
+            "domainAccount": "{{account}}",
+            "id": "{{id}}",
+            "deviceType": "MOBILE"
+          },
+          "response": {
+            "path": "data",
+            "fields": {
+              "applyNo": "申请单号",
+              "applicantName": "申请人",
+              "applicantDepartmentName": "申请部门",
+              "approvalStartTime": "申请日期",
+              "currentWorkListName": "当前审批节点",
+              "contractResponseVo.contractName": "合同名称",
+              "contractResponseVo.totalContractAmount": "合同总金额",
+              "contractResponseVo.contractNumber": "合同编号"
+            }
+          }
+        },
+        "detailMine": {
+          "name": "我发起详情",
+          "path": "/enterprisewechat/xincontract/external/handle_task/queryTaskDetail",
+          "method": "POST",
+          "requestBody": {
+            "applyTaskId": "{{applyTaskId}}",
+            "applyTypeDetail": "{{applyTypeDetail}}",
+            "domainAccount": "{{account}}",
+            "id": "{{id}}",
+            "deviceType": "MOBILE"
+          },
+          "response": {
+            "path": "data",
+            "fields": {
+              "applyNo": "申请单号",
+              "applicantName": "申请人",
+              "applicantDepartmentName": "申请部门",
+              "approvalStartTime": "申请日期",
+              "currentWorkListName": "当前审批节点",
+              "contractResponseVo.contractName": "合同名称",
+              "contractResponseVo.totalContractAmount": "合同总金额",
+              "contractResponseVo.contractNumber": "合同编号"
+            }
+          }
+        },
+        "detailContract": {
+          "name": "合同信息详情",
+          "path": "/enterprisewechat/xincontract/external/handle_task/queryPendingTaskDetail",
+          "method": "POST",
+          "requestBody": {
+            "applyTaskId": "{{applyTaskId}}",
+            "applyTypeDetail": "{{applyTypeDetail}}",
+            "domainAccount": "{{account}}",
+            "id": "{{id}}",
+            "deviceType": "MOBILE"
+          },
+          "response": {
+            "path": "data.contractResponseVo",
+            "fields": {
+              "formType": "合同形式(标准/非标)",
+              "contractApplyType": "申请类型",
+              "masterOrSubContractInfo.masterOrSubContract": "主子合同",
+              "relatedContract": "关联合同",
+              "contractType": "合同分类",
+              "incomeOrExpenseType": "收支类型",
+              "incomeOrExpenseData": "收支信息",
+              "financingReimbursement": "融后报销",
+              "contractName": "合同名称",
+              "contractNumber": "合同编号",
+              "contractStartDate": "合同开始日期",
+              "contractEndDate": "合同截止日期",
+              "contractTerm": "合同期限",
+              "totalContractAmount": "合同总金额",
+              "currentContractAmount": "当前合同金额",
+              "upperCaseCNY": "大写金额",
+              "currencyType": "币种",
+              "foreignCurrencyType": "外币币种",
+              "overseas": "是否海外",
+              "internalBusiness": "是否内部业务",
+              "frameworkAgreement": "框架协议",
+              "budgetAmount": "预算金额",
+              "projectName": "项目名称",
+              "contractDescription": "合同说明",
+              "defaultClause": "违约条款",
+              "financialTerms": "财务条款",
+              "deposit": "押金",
+              "invoiceType": "发票类型",
+              "taxRate": "税点",
+              "discloseApproval": "是否完成披露",
+              "batchCommitFlag": "是否多主体"
+            }
+          }
+        },
+        "approve": {
+          "name": "审批通过",
+          "path": "/enterprisewechat/xincontract/external/approval/agree",
+          "method": "POST",
+          "requestBody": {
+            "applyTaskId": "{{applyTaskId}}",
+            "applyTypeDetail": "{{applyTypeDetail}}",
+            "approvalMessage": "{{remarks}}",
+            "domainAccount": "{{account}}",
+            "handleTaskId": "{{handleTaskId}}",
+            "memberCode": "{{memberCode}}",
+            "memberType": "{{memberType}}",
+            "nodeApprovalType": "{{nodeApprovalType}}",
+            "workListId": "{{workListId}}",
+            "workListMemberId": "{{workListMemberId}}",
+            "worklistName": "{{worklistName}}"
+          }
+        },
+        "reject": {
+          "name": "审批驳回",
+          "path": "/enterprisewechat/xincontract/external/approval/refunded",
+          "method": "POST",
+          "requestBody": {
+            "applyTaskId": "{{applyTaskId}}",
+            "applyTypeDetail": "{{applyTypeDetail}}",
+            "approvalMessage": "{{remarks}}",
+            "domainAccount": "{{account}}",
+            "handleTaskId": "{{handleTaskId}}",
+            "memberCode": "{{memberCode}}",
+            "memberType": "{{memberType}}",
+            "nodeApprovalType": "{{nodeApprovalType}}",
+            "workListId": "{{workListId}}",
+            "workListMemberId": "{{workListMemberId}}",
+            "worklistName": "{{worklistName}}"
+          }
+        },
+        "notifyRead": {
+          "name": "知会标记已阅",
+          "path": "/enterprisewechat/xincontract/external/handle_task/motifyNotifyInfo",
+          "method": "GET",
+          "requestQuery": {
+            "id": "{{id}}"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,182 @@
+{
+  "name": "采购系统",
+  "bizs": {
+    "generay": {
+      "name": "普通采购",
+      "module": "待我审批 / 已审批",
+      "list": {
+        "path": "/enterprisewechat/api/purchase/queryWorkflowInformation",
+        "method": "POST",
+        "requestBody": {
+          "current": "1",
+          "rowCount": "\"10\"",
+          "auditStatusId": "\"{{status}}\"",
+          "operatorUserDomainaccount": "{{account}}",
+          "domainAccount": "{{account}}",
+          "orderNumber": ""
+        },
+        "response": {
+          "path": "data.page.data",
+          "totalField": "total",
+          "listField": "data",
+          "fields": {
+            "inspectionNumber": "验收单号",
+            "orderNumber": "申请单号",
+            "entryName": "项目名称",
+            "auditContent": "审批事项",
+            "auditStatusName": "审批状态",
+            "cnName": "申请人",
+            "departmentName": "申请部门",
+            "createTimes": "申请时间",
+            "finalAllAccount": "最终预算金额(元)",
+            "orderLevel": "单据级别",
+            "channelName": "供应商",
+            "purchaseItemsName": "采购物品",
+            "acceptancePhaseName": "验收阶段",
+            "settlementAmount": "计划结算金额",
+            "invoiceTotalAmount": "票据金额(元)"
+          }
+        }
+      },
+      "detail": {
+        "path": "/enterprisewechat/api/purchase/queryApplicationByOrderNumber",
+        "method": "POST",
+        "requestQuery": {
+          "orderNumber": "{{orderNumber}}"
+        },
+        "response": {
+          "path": "data",
+          "fields": {
+            "orderNumber": "申请单号",
+            "cnName": "申请人",
+            "employeeNumber": "申请人编号",
+            "departmentName": "申请部门",
+            "entryName": "项目名称",
+            "applicationTypeName": "采购方式",
+            "auditContent": "当前审批事项",
+            "purProject": "采购项目",
+            "endTime": "建议采购结束时间",
+            "specifiedSupplierName": "指定供应商",
+            "purchaseReason": "采购理由",
+            "finalAllAccount": "最终预算金额(元)"
+          }
+        }
+      },
+      "detailItems": {
+        "name": "采购物品明细",
+        "path": "/enterprisewechat/api/purchase/queryItemsByOrderNumber",
+        "method": "POST",
+        "requestQuery": {
+          "orderNumber": "{{orderNumber}}",
+          "domainAccount": "{{account}}"
+        },
+        "response": {
+          "path": "data",
+          "listItemsField": "purchaseItems",
+          "listItemsFields": {
+            "purchaseItemName": "物品名称",
+            "purchaseTypeName": "采购类型",
+            "procurementQuantity": "采购数量",
+            "forecastUnitPrice": "预估单价",
+            "purchasingParameters": "采购参数",
+            "accountingSubjects": "会计科目",
+            "receivingAddress": "收货地址",
+            "fieldCompanyFullName": "使用公司",
+            "budgetType": "预算类型",
+            "remarks": "备注"
+          }
+        }
+      },
+      "ops": {
+        "acceptanceDetail": {
+          "name": "验收单详情",
+          "path": "/enterprisewechat/api/purchase/generatedCheckedOrderInfo",
+          "method": "POST",
+          "requestBody": {
+            "isToQueryGeneratedCheckedOrder": "true",
+            "orderNumber": "{{orderNumber}}",
+            "purchaseOrderNumber": "{{purchaseOrderNumber}}",
+            "inspectionNumber": "{{inspectionNumber}}",
+            "domainAccount": "{{account}}"
+          },
+          "response": {
+            "path": "data",
+            "fields": {
+              "inspectionNumber": "验收单号",
+              "orderNumber": "采购单号",
+              "purchaseOrderNumber": "PO单号",
+              "signedCompany": "签约主体",
+              "channel": "供应商",
+              "contractCode": "合同编号",
+              "verificationNumber": "核销单号",
+              "remarks": "备注"
+            },
+            "listItemsField": "purchaseYanShouItemsList",
+            "listItemsFields": {
+              "purchaseItemName": "物品名称",
+              "purchaseQuantity": "计划交付数量",
+              "actualPurchaseQuantity": "实际交付数量",
+              "specificationDescription": "规格",
+              "unitePrice": "单价(元)"
+            }
+          }
+        },
+        "approve": {
+          "name": "审批通过",
+          "path": "/enterprisewechat/api/purchase/getAdopt",
+          "method": "POST",
+          "requestBody": {
+            "orderNumber": "{{orderNumber}}",
+            "remarks": "{{remarks}}",
+            "domainAccount": "{{account}}",
+            "operatingStateId": "0",
+            "auditContent": "{{auditContent}}",
+            "isAddSign": "false"
+          }
+        },
+        "reject": {
+          "name": "审批驳回",
+          "path": "/enterprisewechat/api/purchase/getReject",
+          "method": "POST",
+          "requestBody": {
+            "orderNumber": "{{orderNumber}}",
+            "remarks": "{{remarks}}",
+            "domainAccount": "{{account}}",
+            "operatingStateId": "0",
+            "auditContent": "{{auditContent}}"
+          }
+        },
+        "demandAuditThrough": {
+          "name": "需求部门审核通过/招标审批通过",
+          "path": "/enterprisewechat/api/purchase/demandAuditThrough",
+          "method": "POST",
+          "requestBody": {
+            "orderNumber": "{{orderNumber}}",
+            "remarks": "{{remarks}}",
+            "domainAccount": "{{account}}"
+          }
+        },
+        "supplierAuditPassed": {
+          "name": "供应商审核通过",
+          "path": "/enterprisewechat/api/purchase/supplierAuditPassed",
+          "method": "POST",
+          "requestBody": {
+            "orderNumber": "{{orderNumber}}",
+            "remarks": "{{remarks}}",
+            "domainAccount": "{{account}}"
+          }
+        },
+        "approveRelatedFrameworkContrat": {
+          "name": "框架合同报价审批通过",
+          "path": "/enterprisewechat/api/purchase/approveRelatedFrameworkContrat",
+          "method": "POST",
+          "requestBody": {
+            "orderNumber": "{{orderNumber}}",
+            "remarks": "{{remarks}}",
+            "domainAccount": "{{account}}"
+          }
+        }
+      }
+    }
+  }
+}
