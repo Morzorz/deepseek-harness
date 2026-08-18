@@ -1,0 +1,26 @@
+# wx-dsh-agent 企微审批机器人 systemd 单元
+# 安装：cp wx-dsh-agent.service /etc/systemd/system/ && systemctl daemon-reload
+#       systemctl enable --now wx-dsh-agent
+# 前置：build-wx-dsh-agent.sh 已生成 /opt/wx-dsh-agent，且部署者已把 .env.example 复制
+#       为 /opt/wx-dsh-agent/.env 并填写真实密钥；/opt/deepseek-harness 已 pnpm install。
+[Unit]
+Description=wx-dsh-agent 企微审批机器人
+After=network.target
+
+[Service]
+Type=simple
+User=appuser
+Group=appuser
+WorkingDirectory=/opt/wx-dsh-agent
+EnvironmentFile=/opt/wx-dsh-agent/.env
+Environment=DSH_HOME=/opt/wx-dsh-agent
+# SIGTERM -> exit 0（dsh profile-boot 实现），systemd 视为正常停止
+ExecStart=/usr/local/bin/pnpm --dir /opt/deepseek-harness dsh --profile wx-dsh
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

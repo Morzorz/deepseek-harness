@@ -1,0 +1,92 @@
+# 部署专用 patch 层：叠加在 @deepseek-ai/dsh-base bundle 之上，把能力收敛到「只暴露审批工具」。
+# Loader 的 applyEntryPatches 对顶层 `- id: X` + 字段名条目执行「按 id 就地覆盖」
+# （disabled: true 关掉 dsh-base 默认挂载的工具行）；`- insert:` 条目是追加新行
+# （push 不去重），所以业务插件（新 id）必须用 - insert:，禁用行一律顶层写，避免
+# duplicate loader entry id 启动崩溃。插件路径相对 profile 目录（profile dir 是 Loader
+# 的 baseUrl），指向 build 脚本拷贝出的 plugins/ 目录。
+
+# ── 能力边界：禁用 dsh-base 默认挂载的所有无关工具（顶层条目按 id 就地覆盖） ──
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: skill
+  disabled: true
+- id: skill-filesystem
+  disabled: true
+- id: skill-badge
+  disabled: true
+- id: commands
+  disabled: true
+- id: command-feedback
+  disabled: true
+- id: command-goal
+  disabled: true
+- id: command-compact
+  disabled: true
+- id: goal
+  disabled: true
+- id: goal-round-driver
+  disabled: true
+- id: plan-mode
+  disabled: true
+- id: subagent
+  disabled: true
+- id: subagent-spawn-in-process
+  disabled: true
+- id: subagent-fork-in-process
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+- id: tool-subagent-list-agents
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-subagent-report
+  disabled: true
+- id: workflow-worker-thread
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-result-pruner
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: tool-ralph
+  disabled: true
+- id: tool-str-replace-editor
+  disabled: true
+- id: web
+  disabled: true
+- id: web-search-deepseek
+  disabled: true
+- id: tool-web
+  disabled: true
+
+# ── 业务插件（新 id，用 - insert: 追加） ──
+- insert:
+    - id: wx-agent
+      name: './plugins/wx-plugin.ts'
+      config:
+        defaultEnv: !!js "process.env.WX_DEFAULT_ENV ?? 'pro'"
+        defaultAccount: !!js "process.env.WX_DEFAULT_ACCOUNT ?? ''"
+        auditPath: !!js "process.env.WX_AUDIT_PATH ?? '/opt/wx-dsh-agent/data/audit.jsonl'"
+- insert:
+    - id: wecom-bridge
+      name: './plugins/wecom-bridge/bridge-plugin.ts'
+      config:
+        wsURL: !!js "process.env.WX_WS_URL ?? 'wss://openws.work.weixin.qq.com'"
+        botID: !!js "process.env.WX_BOT_ID"
+        secret: !!js "process.env.WX_BOT_SECRET"
