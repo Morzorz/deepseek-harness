@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import { apply as applyWxPlugin } from './src/wx-plugin.ts'
+import { apply as applyWxPlugin, resolveAccount } from './src/wx-plugin.ts'
 import { WxRegistry, buildBody, buildQuery, replacePlaceholders, opNeedsPlaceholder } from './src/wx/registry.ts'
 import { hmacSignature, buildHmacHeaders } from './src/wx/hmac.ts'
 import { renderResponse } from './src/wx/render.ts'
@@ -104,6 +104,15 @@ describe('wx adapter layer', () => {
     it('falls back to pretty JSON on parse failure', () => {
       expect(renderResponse('not json')).toBe('not json')
     })
+  })
+})
+
+describe('resolveAccount (agentId→userID injection)', () => {
+  it('prefers the bridge lookup, then defaultAccount, then empty', () => {
+    const lookup = (id: string) => (id === 'agent-1' ? 'wx-user-9' : undefined)
+    expect(resolveAccount({ id: 'agent-1' }, lookup, 'dev')).toBe('wx-user-9')
+    expect(resolveAccount({ id: 'agent-nope' }, lookup, 'dev')).toBe('dev')
+    expect(resolveAccount({ id: 'agent-nope' }, lookup)).toBe('')
   })
 })
 

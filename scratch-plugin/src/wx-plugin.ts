@@ -27,6 +27,7 @@ import type { WxOpContext } from './wx/api.ts'
 import { PendingStore } from './wx/pending.ts'
 import { SameTurnGuard } from './wx/same-turn.ts'
 import { Auditor } from './wx/audit.ts'
+import { userByAgentId } from './wecom-bridge/agent-accounts.ts'
 
 export const name = 'wx-agent'
 export const inject = ['tools']
@@ -60,6 +61,23 @@ function toolMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+/**
+ * Resolve the acting account for one agent-scoped tool call: the bridge's
+ * agentId → userID mapping wins, then the dev fallback `defaultAccount`, then
+ * empty (which the wx api rejects clearly).
+ * @param agent - the executing agent (may lack an id when no agent context exists).
+ * @param lookup - agentId → wecom userID lookup (from the bridge's shared map).
+ * @param defaultAccount - dev fallback identity from plugin config.
+ * @returns the acting user identity.
+ */
+export function resolveAccount(
+  agent: { id: string },
+  lookup: (agentId: string) => string | undefined,
+  defaultAccount?: string,
+): string {
+  return lookup(agent.id) ?? defaultAccount ?? ''
+}
+
 export function apply(ctx: Context, cfg: Config) {
   // 记录每个 agent 当前 turn，供 SameTurnGuard 判定「发起审批」与「确认」是否同轮。
   const turnByAgent = new Map<string, number>()
@@ -83,6 +101,14 @@ export function apply(ctx: Context, cfg: Config) {
     }
   })()
 
+  // Per-call context: resolve the executing agent's userID (published by the
+  // bridge) into WxOpContext.account so gateway calls carry the acting identity.
+  const opCtx = (agent: { id: string } | undefined): Promise<WxOpContext> =>
+    backend.then((base) => ({
+      ...base,
+      account: resolveAccount({ id: agent?.id ?? '' }, (id) => userByAgentId.get(id), cfg.defaultAccount),
+    }))
+
   // --- wx_query_biz ---
   ctx.tools.register(defineTool({
     name: 'wx_query_biz',
@@ -96,7 +122,7 @@ export function apply(ctx: Context, cfg: Config) {
     },
     async execute(_args, exec) {
       try {
-        return await wxQueryBiz(await backend, { signal: exec.signal })
+        return await wxQueryBiz(await opCtx(exec.agent), { signal: exec.signal })
       } catch (e) {
         throw new Error(toolMessage(e))
       }
@@ -119,7 +145,7 @@ export function apply(ctx: Context, cfg: Config) {
     },
     async execute(args, exec) {
       try {
-        return await wxQueryTodo(await backend, {
+        return await wxQueryTodo(await opCtx(exec.agent), {
           biz: args.biz,
           status: args.status,
           op: args.op,
@@ -158,7 +184,7 @@ export function apply(ctx: Context, cfg: Config) {
           const v = (args as Record<string, unknown>)[k]
           if (typeof v === 'string' && v) vars[k] = v
         }
-        return await wxQueryDetail(await backend, {
+        return await wxQueryDetail(await opCtx(exec.agent), {
           biz: args.biz,
           op: args.op,
           vars,
@@ -189,7 +215,7 @@ export function apply(ctx: Context, cfg: Config) {
     },
     async execute(args, exec) {
       try {
-        const out = await wxPrepareApprove(await backend, {
+        const out = await wxPrepareApprove(await opCtx(exec.agent), {
           biz: args.biz,
           orderNumber: args.orderNumber,
           action: args.action,
@@ -221,7 +247,7 @@ export function apply(ctx: Context, cfg: Config) {
         return '确认操作必须在用户下一条消息中单独进行，不能在发起审批的同一轮执行。'
       }
       try {
-        return await wxConfirmApprove(await backend, {
+        return await wxConfirmApprove(await opCtx(exec.agent), {
           decision: args.decision,
           environment: args.environment,
         })
